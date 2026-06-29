@@ -1,0 +1,71 @@
+#!/bin/bash
+
+##SBATCH --job-name=vasp_runner
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=160
+##SBATCH --ntasks-per-node=240
+#SBATCH --cpus-per-task=1
+##SBATCH --time=24:00:00
+#SBATCH --time=168:00:00
+
+#normal queue upto 7 days, long queue 28 days, inter 1 day
+#gen3: 160 cores per node; gen5 240 per node
+
+#SBATCH --partition=xeon
+#SBATCH --partition=xeon-gen3
+##SBATCH --partition=xeon-gen5
+#SBATCH --qos=normal
+##SBATCH --qos=inter
+##SBATCH --qos=long
+
+source /export/software/shared/apps/intel/oneapi/setvars.sh
+
+#source conda environment for python/ase
+source /export/software/miniforge3/etc/profile.d/conda.sh
+conda activate /homes/msrbzq/envs/myenv
+
+NC=$SLURM_NTASKS
+PPN=$SLURM_NTASKS_PER_NODE
+echo "No of cores: $NC"
+echo "No of nodes: $SLURM_NNODES"
+echo "Processes per node: $PPN"
+
+ulimit -s unlimited #needed for VASP !!!
+export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
+unset I_MPI_PMI_LIBRARY
+
+# Ensure the cpus-per-task option is propagated to srun commands
+export SRUN_CPUS_PER_TASK=$SLURM_CPUS_PER_TASK
+
+echo "Starting time: " `date`
+
+#path=$HOME/APPS/vasp.6.4.2/bin/
+#path=$HOME/APPS/vasp.6.4.3/bin/
+#path=$HOME/APPS/vasp.6.4.3/bin-oneapi_omp  #works well
+path=$HOME/APPS/vasp.6.3.2-vtst/bin
+#path=$HOME/APPS/vasp.6.4.3/bin-intel_omp
+#path=$HOME/APPS/vasp.6.4.3/bin-intel
+
+
+exe=vasp_std
+
+echo "VASP executable: $path/$exe"
+
+#RSH_COMMAND=ssh
+#MACHINEFILE="$SLURM_SUBMIT_DIR/nodes.$SLURM_JOB_ID"
+#rm nodes.*
+#srun -l /bin/hostname | sort -n | awk '{print $2}' | awk -F. '{print $1}' > $MACHINEFILE
+#MPIRUN_CMD="mpiexec.hydra -np $NC -ppn $PPN -f $MACHINEFILE $path/$exe > vasp.out"
+#export VASP_COMMAND="$MPIRUN_CMD"
+
+#echo "Running vasp_runner.py with VASP_COMMAND: $VASP_COMMAND"
+
+
+#CMD="vasp_runner.py -i *.res"
+CMD="v2-vasp_runner-intel-ace.py -i *.res -np $NC -exe $path/$exe -mpi_intel"
+echo "Running command: $CMD"
+
+
+eval $CMD
+
+echo "Ending time: " `date`
