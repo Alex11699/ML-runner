@@ -533,27 +533,27 @@ InGaZn9O18,rand,5,s5,short,short-runs/RUN2s/InGaZn9O18/rand-s5,complete,2132373,
 InGaZn9O18,rand,6,s6,short,short-runs/RUN2s/InGaZn9O18/rand-s6,complete,2132374,-4.57666,P1 (1),GaInO18Zn9,N/A
 InGaZn9O18,pso,5,s5,short,short-runs/RUN2s/InGaZn9O18/pso-s5,complete,2132375,-4.60878,P1 (1),GaInO18Zn9,0:42:48
 InGaZn9O18,pso,6,s6,short,short-runs/RUN2s/InGaZn9O18/pso-s6,complete,2132376,-4.62583,P1 (1),GaInO18Zn9,1:00:20
-In3Ga3Zn9O18,tpe,9,s9,short,short-runs/RUN2s/In3Ga3Zn9O18/tpe-s9,running,2143316,N/A,N/A,N/A,N/A
-In3Ga3Zn9O18,tpe,10,s10,short,short-runs/RUN2s/In3Ga3Zn9O18/tpe-s10,running,2143317,N/A,N/A,N/A,N/A
-In3Ga3Zn9O18,rand,9,s9,short,short-runs/RUN2s/In3Ga3Zn9O18/rand-s9,running,2143318,N/A,N/A,N/A,N/A
-In3Ga3Zn9O18,rand,10,s10,short,short-runs/RUN2s/In3Ga3Zn9O18/rand-s10,running,2143319,N/A,N/A,N/A,N/A
-In3Ga3Zn9O18,pso,9,s9,short,short-runs/RUN2s/In3Ga3Zn9O18/pso-s9,running,2143320,N/A,N/A,N/A,N/A
-In3Ga3Zn9O18,pso,10,s10,short,short-runs/RUN2s/In3Ga3Zn9O18/pso-s10,running,2143321,N/A,N/A,N/A,N/A
-InGaZn9O12,tpe,7,s7,short,short-runs/RUN2s/InGaZn9O12/tpe-s7,running,2143322,N/A,N/A,N/A,N/A
-InGaZn9O12,tpe,8,s8,short,short-runs/RUN2s/InGaZn9O12/tpe-s8,running,2143323,N/A,N/A,N/A,N/A
-InGaZn9O12,rand,7,s7,short,short-runs/RUN2s/InGaZn9O12/rand-s7,running,2143324,N/A,N/A,N/A,N/A
-InGaZn9O12,rand,8,s8,short,short-runs/RUN2s/InGaZn9O12/rand-s8,running,2143325,N/A,N/A,N/A,N/A
-InGaZn9O12,pso,7,s7,short,short-runs/RUN2s/InGaZn9O12/pso-s7,running,2143326,N/A,N/A,N/A,N/A
-InGaZn9O12,pso,8,s8,short,short-runs/RUN2s/InGaZn9O12/pso-s8,running,2143327,N/A,N/A,N/A,N/A
-InGa13ZnO22,tpe,7,s7,short,short-runs/RUN2s/InGa13ZnO22/tpe-s7,running,2143328,N/A,N/A,N/A,N/A
-InGa13ZnO22,tpe,8,s8,short,short-runs/RUN2s/InGa13ZnO22/tpe-s8,running,2143329,N/A,N/A,N/A,N/A
-InGa13ZnO22,rand,7,s7,short,short-runs/RUN2s/InGa13ZnO22/rand-s7,running,2143330,N/A,N/A,N/A,N/A
-InGa13ZnO22,rand,8,s8,short,short-runs/RUN2s/InGa13ZnO22/rand-s8,running,2143331,N/A,N/A,N/A,N/A
-InGa13ZnO22,pso,7,s7,short,short-runs/RUN2s/InGa13ZnO22/pso-s7,running,2143332,N/A,N/A,N/A,N/A
-InGa13ZnO22,pso,8,s8,short,short-runs/RUN2s/InGa13ZnO22/pso-s8,running,2143333,N/A,N/A,N/A,N/A
-In3Ga7Zn2O17,tpe,11,s11,short,short-runs/RUN2s/In3Ga7Zn2O17/tpe-s11,running,2143334,N/A,N/A,N/A,N/A
-In3Ga7Zn2O17,tpe,12,s12,short,short-runs/RUN2s/In3Ga7Zn2O17/tpe-s12,running,2143335,N/A,N/A,N/A,N/A
-In3Ga7Zn2O17,rand,11,s11,short,short-runs/RUN2s/In3Ga7Zn2O17/rand-s11,running,2143336,N/A,N/A,N/A,N/A
-In3Ga7Zn2O17,rand,12,s12,short,short-runs/RUN2s/In3Ga7Zn2O17/rand-s12,running,2143337,N/A,N/A,N/A,N/A
-In3Ga7Zn2O17,pso,11,s11,short,short-runs/RUN2s/In3Ga7Zn2O17/pso-s11,running,2143338,N/A,N/A,N/A,N/A
-In3Ga7Zn2O17,pso,12,s12,short,short-runs/RUN2s/In3Ga7Zn2O17/pso-s12,running,2143339,N/A,N/A,N/A,N/A
+In3Ga3Zn9O18,tpe,9,s9,short,short-runs/RUN2s/In3Ga3Zn9O18/tpe-s9,timeout,2143316,N/A,N/A,N/A,N/A
+In3Ga3Zn9O18,tpe,10,s10,short,short-runs/RUN2s/In3Ga3Zn9O18/tpe-s10,timeout,2143317,N/A,N/A,N/A,N/A
+In3Ga3Zn9O18,rand,9,s9,short,short-runs/RUN2s/In3Ga3Zn9O18/rand-s9,complete,2143318,-4.823,Cm (8),GaInO6Zn3,N/A
+In3Ga3Zn9O18,rand,10,s10,short,short-runs/RUN2s/In3Ga3Zn9O18/rand-s10,complete,2143319,-4.91909,P1 (1),GaInO6Zn3,0:56:36
+In3Ga3Zn9O18,pso,9,s9,short,short-runs/RUN2s/In3Ga3Zn9O18/pso-s9,complete,2143320,-4.87832,P1 (1),GaInO6Zn3,1:09:59
+In3Ga3Zn9O18,pso,10,s10,short,short-runs/RUN2s/In3Ga3Zn9O18/pso-s10,complete,2143321,-4.84537,P1 (1),GaInO6Zn3,1:50:00
+InGaZn9O12,tpe,7,s7,short,short-runs/RUN2s/InGaZn9O12/tpe-s7,complete,2143322,-4.58656,P1 (1),GaInO12Zn9,0:51:09
+InGaZn9O12,tpe,8,s8,short,short-runs/RUN2s/InGaZn9O12/tpe-s8,timeout,2143323,N/A,N/A,N/A,N/A
+InGaZn9O12,rand,7,s7,short,short-runs/RUN2s/InGaZn9O12/rand-s7,complete,2143324,-4.4921,P1 (1),GaInO12Zn9,N/A
+InGaZn9O12,rand,8,s8,short,short-runs/RUN2s/InGaZn9O12/rand-s8,complete,2143325,-4.64849,P1 (1),GaInO12Zn9,1:16:34
+InGaZn9O12,pso,7,s7,short,short-runs/RUN2s/InGaZn9O12/pso-s7,timeout,2143326,N/A,N/A,N/A,N/A
+InGaZn9O12,pso,8,s8,short,short-runs/RUN2s/InGaZn9O12/pso-s8,complete,2143327,-4.6176,P1 (1),GaInO12Zn9,N/A
+InGa13ZnO22,tpe,7,s7,short,short-runs/RUN2s/InGa13ZnO22/tpe-s7,complete,2143328,-5.54731,P1 (1),Ga13InO22Zn,0:50:48
+InGa13ZnO22,tpe,8,s8,short,short-runs/RUN2s/InGa13ZnO22/tpe-s8,complete,2143329,-5.61511,P1 (1),Ga13InO22Zn,1:01:15
+InGa13ZnO22,rand,7,s7,short,short-runs/RUN2s/InGa13ZnO22/rand-s7,complete,2143330,-5.57441,P1 (1),Ga13InO22Zn,1:41:41
+InGa13ZnO22,rand,8,s8,short,short-runs/RUN2s/InGa13ZnO22/rand-s8,complete,2143331,-5.72657,P1 (1),Ga13InO22Zn,1:06:49
+InGa13ZnO22,pso,7,s7,short,short-runs/RUN2s/InGa13ZnO22/pso-s7,complete,2143332,-5.64356,P1 (1),Ga13InO22Zn,1:48:46
+InGa13ZnO22,pso,8,s8,short,short-runs/RUN2s/InGa13ZnO22/pso-s8,complete,2143333,-5.59442,P1 (1),Ga13InO22Zn,0:37:08
+In3Ga7Zn2O17,tpe,11,s11,short,short-runs/RUN2s/In3Ga7Zn2O17/tpe-s11,complete,2143334,-5.41482,P1 (1),Ga7In3O17Zn2,0:56:54
+In3Ga7Zn2O17,tpe,12,s12,short,short-runs/RUN2s/In3Ga7Zn2O17/tpe-s12,complete,2143335,-5.38698,P1 (1),Ga7In3O17Zn2,1:03:27
+In3Ga7Zn2O17,rand,11,s11,short,short-runs/RUN2s/In3Ga7Zn2O17/rand-s11,complete,2143336,-5.27263,P1 (1),Ga7In3O17Zn2,1:24:18
+In3Ga7Zn2O17,rand,12,s12,short,short-runs/RUN2s/In3Ga7Zn2O17/rand-s12,complete,2143337,-5.39992,P1 (1),Ga7In3O17Zn2,0:56:47
+In3Ga7Zn2O17,pso,11,s11,short,short-runs/RUN2s/In3Ga7Zn2O17/pso-s11,complete,2143338,-5.53914,Pm (6),Ga7In3O17Zn2,1:37:52
+In3Ga7Zn2O17,pso,12,s12,short,short-runs/RUN2s/In3Ga7Zn2O17/pso-s12,complete,2143339,-5.43627,P1 (1),Ga7In3O17Zn2,1:00:33
