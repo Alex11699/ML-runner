@@ -1,0 +1,40 @@
+#!/bin/bash
+#SBATCH --time=24:00:00
+#SBATCH --partition=gpu
+#SBATCH --job-name=FUSE
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=42
+#SBATCH --mem-per-cpu=3700
+#SBATCH --gres=gpu:ampere_a100:1
+##SBATCH --gres=gpu:lovelace_l40:1
+#SBATCH --account=su007-bk-gpu
+
+# Max walltime: normal = 48h, devel = 1h
+
+module purge  # Clears all loaded modules
+
+# Load necessary modules
+ml GCC/11.3.0 OpenMPI/4.1.4
+#Python/3.10.4
+# PIP-PyTorch/2.2.0 Miniconda3/23.9.0-0
+
+#source $HOME/.bashrc
+source /home/m/msrbzq/APPS/miniconda3/etc/profile.d/conda.sh
+conda activate FUSE_205
+
+
+# Log start time
+start_time=$(date +%s)
+echo "Python script started at: $(date)" >> job_timing.txt
+
+# Run the Python script
+python mlgen_mace_input.py
+
+# Log end time
+end_time=$(date +%s)
+echo "Python script ended at: $(date)" >> job_timing.txt
+
+# Calculate and log duration
+runtime=$((end_time - start_time))
+echo "Python script runtime: $runtime seconds" >> job_timing.txt

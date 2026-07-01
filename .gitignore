@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# HPC job artifacts
+*.out
+*.err
+slurm-*.out
+
+# Generated structure/simulation outputs (keep code, not bulk data)
+*.traj
+*.dump
+*.xyz
+gn-boss/
+structures/
+reference_structures/
+
+# Large registries if they outgrow text-friendly size
+# (uncomment if fuse_quater_registry.csv gets unwieldy)
+# fuse_quater_registry.csv
+
+# Editor/OS noise
+.DS_Store
+.vscode/
+*.swp
+
+# MACE models
+*.model
