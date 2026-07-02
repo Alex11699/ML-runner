@@ -29,7 +29,8 @@ def apply_patch():
     def patched_provenance(sources, icsd=None):
         if isinstance(sources, str):
             sources = [sources]
-        fname = ''.join(sources).lower()
+        fname = ''.join(s.split('/')[-1] for s in sources).lower()
+        #fname = ''.join(sources).lower()
         #if 'pso' in fname:
          #   return 'FUSE'
         #elif 'rand' in fname:
@@ -39,6 +40,8 @@ def apply_patch():
         #return original_provenance(sources, icsd=icsd)
         if any(s in fname for s in ['pso', 'rand', 'tpe']):
             return 'FUSE'
+        if '_mat_' in fname:
+            return 'MatterGen'
         result = original_provenance(sources, icsd=icsd)
         if result == 'OQMD':
             return 'MP'  # merge OQMD into MP label
@@ -86,13 +89,14 @@ def _ternary_scatter_by_source(hull, ax, scale, sources=None, source_labels=None
     SOURCE_COLOURS = {
         'FUSE':  '#2196F3',  # blue
         'AIRSS': '#FF5722',  # orange
+        'MatterGen': '#FC0FC0', #pink
         'MP':    '#00ff00',  # green
         'ICSD':  '#212121',  # dark/black
         'Other': '#BDBDBD',  # light gray
     }
 
     if sources is None:
-        sources = ['FUSE', 'MP', 'AIRSS', 'ICSD', 'Other']
+        sources = ['FUSE', 'MP', 'AIRSS', 'ICSD', 'Other', 'MatterGen']
     if source_labels is None:
         source_labels = sources
     else:

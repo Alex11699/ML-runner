@@ -100,7 +100,7 @@ from matador.utils.cursor_utils import display_results, get_guess_doc_provenance
 table_cursor = [
     doc for doc in polished_hull.cursor
     if doc['hull_distance'] <= hull_cutoff
-    and get_guess_doc_provenance(doc['source']) == 'FUSE'
+    and get_guess_doc_provenance(doc['source']) in ('FUSE', 'MatterGen')
 ]
 display_results(table_cursor, hull=True, summary=False, use_source=True)
 
@@ -108,8 +108,8 @@ matador.plotting.plot_ternary_hull(
     polished_hull,
     show=True,
     labels=True,
-    sources=['AIRSS', 'FUSE', 'MP', 'ICSD'],
-    source_labels=['AIRSS', 'FUSE', 'MP/OQMD', 'ICSD'],
+    sources=['AIRSS', 'FUSE', 'MatterGen', 'MP', 'ICSD'],
+    source_labels=['AIRSS', 'FUSE', 'MatterGen', 'MP/OQMD', 'ICSD'],
 )
 
 exit()

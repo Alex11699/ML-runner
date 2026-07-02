@@ -60,7 +60,9 @@ print(f"Running optimisations on {device}")
 
 if args.ml_method == "MACE":
     from mace.calculators.mace import MACECalculator
-    MACE_model_path = glob.glob('*.model')
+    #MACE_model_path = glob.glob('*.model')
+    MACE_model_path = '/home/msrbzq/work/ML-opts/models/mace-omat-0-medium.model'
+    print(f"Using MACE model: {MACE_model_path}")
     if not MACE_model_path:
         raise FileNotFoundError("No MACE model file found in the current directory.")
     calculator = MACECalculator(model_path=MACE_model_path,device=device)
@@ -162,7 +164,7 @@ for inpf in args.inpf:
             atoms.info['pressure'] = P
 
             # Symmetrize the structure
-            dataset = ase.spacegroup.symmetrize.refine_symmetry(atoms, symprec=1e-5, verbose=False)
+            dataset = ase.spacegroup.symmetrize.refine_symmetry(atoms, symprec=0.1, verbose=False)
             SG = dataset.international
             atoms.info['spacegroup'] = SG
             atoms.info['times_found'] = 1
@@ -193,7 +195,7 @@ for inpf in args.inpf:
         atoms.info['pressure'] = P
 
         # Symmetrize the structure
-        dataset = ase.spacegroup.symmetrize.refine_symmetry(atoms, symprec=1e-5, verbose=False)
+        dataset = ase.spacegroup.symmetrize.refine_symmetry(atoms, symprec=0.1, verbose=False)
         SG = dataset.international
         atoms.info['spacegroup'] = SG
         atoms.info['times_found'] = 1
