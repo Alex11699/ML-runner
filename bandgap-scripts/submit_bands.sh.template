@@ -1,0 +1,39 @@
+#!/bin/bash
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=64
+#SBATCH --cpus-per-task=2
+#SBATCH --mem-per-cpu=3850
+#SBATCH --account=su007-bk
+#SBATCH --partition=compute
+#SBATCH --time=02:00:00
+#SBATCH --job-name=bands_%STRUCT_NAME%
+#SBATCH --output=%STRUCT_DIR%/bands/slurm-%j.out
+#SBATCH --error=%STRUCT_DIR%/bands/slurm-%j.err
+
+module purge
+module load intel/2019b HDF5/1.10.5
+
+export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK}
+unset I_MPI_PMI_LIBRARY
+
+# Same vasp_std requirement as the SCF step -- vasp_gam cannot run the
+# explicit multi-point seekpath band path.
+path=$HOME/APPS/vasp.6.4.2/bin/
+exe=vasp_std
+APP=$path/$exe
+
+export ASE_VASP_COMMAND="srun $APP"
+export VASP_PP_PATH=REPLACE_ME_PATH_TO_POTCARS
+
+REPLACE_ME_ENV_ACTIVATION
+
+# Optional efficiency note (not required for correctness): the bands step
+# has ~150-200 explicit k-points and no self-consistency to worry about, so
+# it's a good candidate for VASP's KPAR k-point parallelization on top of
+# NPAR. If you want to try it, add KPAR=<n> to make_bands_calculator() in
+# common.py (bands INCAR only -- leave the SCF INCAR's NPAR alone), where n
+# divides evenly into ntasks-per-node. Not applied here since it changes
+# nothing about correctness, only wall-time -- worth tuning once you've
+# seen how long an untuned bands run actually takes on Sulis.
+
+python run_bands.py "%STRUCT_FILE%" "%RUN_ROOT%"

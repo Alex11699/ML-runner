@@ -60,8 +60,8 @@ print(f"Running optimisations on {device}")
 
 if args.ml_method == "MACE":
     from mace.calculators.mace import MACECalculator
-    #MACE_model_path = glob.glob('*.model')
-    MACE_model_path = '/home/msrbzq/work/ML-opts/models/mace-omat-0-medium.model'
+    MACE_model_path = glob.glob('*.model')
+    #MACE_model_path = '/home/msrbzq/work/ML-opts/models/mace-omat-0-medium.model'
     print(f"Using MACE model: {MACE_model_path}")
     if not MACE_model_path:
         raise FileNotFoundError("No MACE model file found in the current directory.")

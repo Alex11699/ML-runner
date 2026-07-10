@@ -89,7 +89,7 @@ polished_hull = QueryConvexHull(
     cursor=polished_cursor,
     species=args.comp,
     no_plot=True,  # don't auto-plot
-    hull_cutoff=0.2,
+    hull_cutoff=0.1,
     labels=True,
 
 )
