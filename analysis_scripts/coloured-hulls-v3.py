@@ -72,7 +72,7 @@ cursor, failures = res2dict(args.inpf, as_model=True)
 
 
 # filter structure for uniqueness
-filtering = 0
+filtering = 1
 if filtering:
     polished_cursor = filter_unique_structures(cursor, sim_tol=0.1, enforce_same_stoich=True, quiet=True)
 else:
@@ -100,7 +100,7 @@ from matador.utils.cursor_utils import display_results, get_guess_doc_provenance
 table_cursor = [
     doc for doc in polished_hull.cursor
     if doc['hull_distance'] <= hull_cutoff
-    and get_guess_doc_provenance(doc['source']) in ('FUSE', 'MatterGen')
+    and get_guess_doc_provenance(doc['source']) in ('MatterGen')
 ]
 display_results(table_cursor, hull=True, summary=False, use_source=True)
 
