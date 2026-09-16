@@ -6,6 +6,20 @@ NPAR etc. stay identical across the two stages (only what has to differ —
 IBRION/NSW being fixed at -1/0 for both, ISMEAR/SIGMA/KSPACING/ICHARG/LCHARG —
 is set per-function below).
 
+Physics/convergence settings (ENCUT, PREC, ALGO, NELM, SIGMA, KSPACING,
+EDIFF, functional) are NOT hardcoded here -- they're loaded from a JSON
+config via config.py (see that module's docstring). This module reads the
+BANDGAP_CONFIG_PATH environment variable at import time; that path is set
+by whichever driver script (driver.py / driver_local.py /
+launch_workers.py) submitted the batch, pointing at the FROZEN
+run_root/config_used.json for that run-root -- not necessarily your
+current --config file, if you've edited it since submitting. See
+config_bandgap.json for the editable starting template and
+CONFIG_REFERENCE.md for a plain-language field reference.
+NPAR (parallelization, not physics) stays a plain constant below rather
+than a config field, same as VASP_PP_PATH/ASE_VASP_COMMAND are cluster
+environment, not calculation settings.
+
 Assumptions / things to check before running at scale:
   - VASP_PP_PATH must be set in your environment (pointing at the directory
     containing potpaw_PBE/) before ASE can write POTCAR files. Put this in
@@ -13,15 +27,22 @@ Assumptions / things to check before running at scale:
   - ASE_VASP_COMMAND (or the older VASP_COMMAND) must point at how to launch
     vasp_std under srun/mpirun on the cluster you're on, e.g.:
         export ASE_VASP_COMMAND="srun vasp_std"
-  - SIGMA_ELEC is set to 0.1 here, matching the strict-opts relaxation's
-    SIGMA=0.1 uniformly (confirmed against your actual bandgaps/strict-opts/
-    common.py).
-  - USE_OPTB88_VDW below switches BOTH stages to the OptB88-vdW functional
-    (GGA=BO), for comparing against ALIGNN's JARVIS-DFT training convention.
-    This runs on top of the EXISTING PBE-relaxed ("strict PBE opts")
-    geometries -- deliberately not re-relaxed under OptB88-vdW first.
+  - config["sigma_elec"] defaults to 0.1, matching the strict-opts
+    relaxation's SIGMA=0.1 uniformly (confirmed against your actual
+    bandgaps/strict-opts/common.py).
+  - config["functional"] ("pbe" or "optb88-vdw") switches BOTH stages
+    together. optb88-vdw (GGA=BO) is for comparing against ALIGNN's
+    JARVIS-DFT training convention, and runs on top of the EXISTING
+    PBE-relaxed ("strict PBE opts") geometries -- deliberately not
+    re-relaxed under OptB88-vdW first. Defaults to "pbe". (Previously this
+    was a hardcoded module constant always True, so every bandgap run --
+    including ones meant to be plain PBE -- silently used OptB88-vdW.)
+  - The POTCAR family is standard PAW-PBE for BOTH branches -- VASP does not
+    distribute a separate "optB88" pseudopotential set. The functional is
+    entirely defined by the GGA=BO/PARAM1/PARAM2/LUSE_VDW INCAR tags; pp
+    stays "PBE" either way (confirmed against VASP community guidance).
   - VDW_KERNEL_PATH must point at your confirmed-good vdw_kernel.bindat when
-    USE_OPTB88_VDW is True -- required by GGA=BO/LUSE_VDW. Your VASP build
+    functional is optb88-vdw -- required by GGA=BO/LUSE_VDW. Your VASP build
     (6.3.2) does not auto-generate it (that's a 6.4.3+ feature), so a
     missing file means VASP silently spends hours computing it instead of
     erroring.
@@ -36,18 +57,21 @@ from pymatgen.io.ase import AseAtomsAdaptor
 from pymatgen.symmetry.kpath import KPathSeek
 from pymatgen.io.vasp.inputs import Kpoints
 
-# ---- settings matched to the "strict PBE opts" relaxation these structures
-# ---- came from (ENCUT=800, PREC=Accurate, EDIFF=1e-8, SIGMA=0.1) ----
-ENCUT = 800.0
-PREC = "Accurate"
-ALGO = "Normal"
-NELM = 120
-NPAR = 8
-SIGMA_ELEC = 0.1     # matches strict-opts relaxation SIGMA, for a clean comparison
-KSPACING_SCF = 0.2   # denser than the 0.314 used for relaxation
+import config as _config
+
+CFG = _config.load_config(_config.BANDGAP_CONFIG_FIELDS, os.environ.get("BANDGAP_CONFIG_PATH"))
+
+ENCUT = CFG["encut"]
+PREC = CFG["prec"]
+ALGO = CFG["algo"]
+NELM = CFG["nelm"]
+NPAR = 8  # parallelization, not a physics setting -- see module docstring
+SIGMA_ELEC = CFG["sigma_elec"]
+KSPACING_SCF = CFG["kspacing_scf"]
+EDIFF = CFG["ediff"]
 
 # ---- OptB88-vdW ----
-USE_OPTB88_VDW = True
+USE_OPTB88_VDW = CFG["functional"] == "optb88-vdw"
 GGA_BO_PARAM1 = 0.1833333333
 GGA_BO_PARAM2 = 0.2200000000
 VDW_KERNEL_PATH = os.environ.get("VDW_KERNEL_PATH")
@@ -113,7 +137,7 @@ def make_scf_calculator(directory: str) -> Vasp:
         ismear=0,
         sigma=SIGMA_ELEC,
         kspacing=KSPACING_SCF,
-        ediff=1e-8,
+        ediff=EDIFF,
         lcharg=True,     # required: bands step reads this CHGCAR
         lwave=False,
         nwrite=1,
@@ -142,6 +166,10 @@ def make_bands_calculator(directory: str):
         ismear=0,
         sigma=SIGMA_ELEC,
         icharg=11,
+        ediff=EDIFF,     # was previously unset here, silently falling back to
+        # VASP's own default (1e-4 eV) -- much looser than the SCF stage's
+        # 1e-8, and inconsistent with the confirmed EDIFF=1e-8 for this
+        # workflow. Caught while wiring this up to the config system.
         lcharg=False,
         lwave=False,
         **_functional_kwargs(),

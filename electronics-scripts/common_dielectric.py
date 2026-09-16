@@ -31,19 +31,34 @@ chain is what caused the bandgap workflow's "strict PBE opts" dataset to
 actually be computed with genuine LDA throughout (confirmed via `head -1
 POTCAR` showing "PAW Zn", LEXCH=CA, not "PAW_PBE") -- fixed there, and
 fixed here from the start rather than carrying the same latent risk.
+
+Physics/convergence settings (ENCUT, ALGO, NELM, SIGMA, KSPACING, EDIFF) are
+loaded from a JSON config via config.py (see that module's docstring), not
+hardcoded here. Reads the DIELECTRIC_CONFIG_PATH environment variable at
+import time -- set by whichever driver script (driver_local_dielectric.py /
+launch_workers.py) submitted the batch, pointing at the FROZEN
+run_root/config_used.json for that run-root. See config_dielectric.json for
+the editable starting template and CONFIG_REFERENCE.md for a plain-language
+field reference. This workflow has no --functional equivalent -- it's
+always plain PBE (see FUNCTIONAL note above), so "functional" isn't a field
+here.
 """
+
+import os
 
 import numpy as np
 from ase.calculators.vasp import Vasp
 
-ENCUT = 800.0  # matches the relaxation / bandgap-workflow ENCUT (common.py) --
-# must stay consistent with whatever ENCUT the input geometry was relaxed at.
-ALGO = "Normal"
-NELM = 120
-SIGMA_ELEC = 0.05
-KSPACING = 0.2  # reuses the same mesh density as common.py's SCF stage; dielectric
-# properties can be sensitive to k-point sampling, so treat this as a starting
-# point worth convergence-testing separately rather than assuming it's converged.
+import config as _config
+
+CFG = _config.load_config(_config.DIELECTRIC_CONFIG_FIELDS, os.environ.get("DIELECTRIC_CONFIG_PATH"))
+
+ENCUT = CFG["encut"]
+ALGO = CFG["algo"]
+NELM = CFG["nelm"]
+SIGMA_ELEC = CFG["sigma_elec"]
+KSPACING = CFG["kspacing"]
+EDIFF = CFG["ediff"]
 
 
 def make_dielectric_calculator(directory: str) -> Vasp:
@@ -61,9 +76,7 @@ def make_dielectric_calculator(directory: str) -> Vasp:
         nelm=NELM,
         ismear=0,
         sigma=SIGMA_ELEC,
-        ediff=1e-8,          # matches the bandgap workflow's ediff (both now at
-        # 1e-8/PREC=Accurate, confirmed) -- kept explicit here since this is a
-        # second-derivative property, more sensitive to electronic convergence.
+        ediff=EDIFF,
         kspacing=KSPACING,
         pp="PBE",            # see module docstring — explicit, not left to default
         gga="PE",

@@ -48,4 +48,5 @@ cd %CODE_DIR%
 mkdir -p %RUN_ROOT%/_worker_logs
 
 python driver_local_dielectric.py --structures-dir %STRUCTURES_DIR% --run-root %RUN_ROOT% \
+    --config %CONFIG_PATH% \
     --reclaim-stale-minutes 180

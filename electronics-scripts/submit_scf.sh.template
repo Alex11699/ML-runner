@@ -25,8 +25,11 @@ APP=$path/$exe
 export ASE_VASP_COMMAND="srun $APP"
 export VASP_PP_PATH="/home/m/msrbzq/VASP-PPs"
 export VDW_KERNEL_PATH="$HOME/APPS/vasp.6.3.2/vdw_kernel.bindat"
-# only needed when common.py's USE_OPTB88_VDW=True -- harmless to leave set
-# otherwise, since stage_vdw_kernel() no-ops when that flag is off.
+# only needed when the config's "functional" is optb88-vdw -- harmless to
+# leave set otherwise, since stage_vdw_kernel() no-ops when that's off.
+export BANDGAP_CONFIG_PATH=%CONFIG_PATH%
+# frozen run_root/config_used.json for this run-root, set by driver.py's
+# --config resolution (see config.py). Read by common.py at import time.
 
 source /home/m/msrbzq/APPS/miniconda3/etc/profile.d/conda.sh
 conda activate bandgap-env

@@ -31,6 +31,7 @@ import time
 from pathlib import Path
 
 from claiming import ensure_dirs, claim_structure, release_claim, reclaim_stale_claims
+import config as _config
 
 REQUIRED_ENV_VARS = ["ASE_VASP_COMMAND", "VASP_PP_PATH"]
 SCRIPT_DIR = Path(__file__).resolve().parent  # the one master copy's own location
@@ -85,6 +86,16 @@ def main():
                           "script is concerned, nothing is ever moved out of it")
     ap.add_argument("--run-root", required=True, type=Path)
     ap.add_argument("--pattern", default="*.cif")
+    ap.add_argument("--config", type=Path, default=SCRIPT_DIR / "config_bandgap.json",
+                     help="JSON config for both scf and bands stages -- see "
+                          "CONFIG_REFERENCE.md. Def: config_bandgap.json next to "
+                          "this script. Resolved ONCE and frozen to "
+                          "run-root/config_used.json on first submission for "
+                          "this run-root; later --config edits don't retroactively "
+                          "change an already-started batch (see config.py). Sets "
+                          "BANDGAP_CONFIG_PATH in this process's environment, "
+                          "inherited by the run_scf.py/run_bands.py subprocesses "
+                          "below.")
     ap.add_argument("--limit", type=int, default=None,
                      help="max structures THIS instance will process (not a global cap)")
     ap.add_argument("--stop-on-first-failure", action="store_true")
@@ -99,7 +110,9 @@ def main():
     args = ap.parse_args()
 
     env_check()
-    args.run_root.mkdir(parents=True, exist_ok=True)
+    _resolved, config_path = _config.resolve_and_freeze(
+        _config.BANDGAP_CONFIG_FIELDS, args.config, args.run_root)
+    os.environ["BANDGAP_CONFIG_PATH"] = str(config_path)
     claims_dir = ensure_dirs(args.run_root)
 
     if args.reclaim_all_claims:

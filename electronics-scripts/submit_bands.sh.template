@@ -27,6 +27,13 @@ APP=$path/$exe
 export ASE_VASP_COMMAND="srun $APP"
 export VASP_PP_PATH="/home/m/msrbzq/VASP-PPs"
 export VDW_KERNEL_PATH="$HOME/APPS/vasp.6.3.2/vdw_kernel.bindat"
+# only needed when the config's "functional" is optb88-vdw -- harmless to
+# leave set otherwise, since stage_vdw_kernel() no-ops when that's off.
+export BANDGAP_CONFIG_PATH=%CONFIG_PATH%
+# same frozen config as the scf stage (driver.py fills both templates from
+# the same resolved run_root/config_used.json) -- MUST match the scf
+# stage's, since bands reads the CHGCAR (ICHARG=11) that scf computed under
+# whatever functional/ENCUT that config specified.
 
 source /home/m/msrbzq/APPS/miniconda3/etc/profile.d/conda.sh
 conda activate bandgap-env

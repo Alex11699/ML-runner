@@ -15,6 +15,8 @@ import argparse
 import subprocess
 from pathlib import Path
 
+import config as _config
+
 
 def main():
     ap = argparse.ArgumentParser()
@@ -28,11 +30,14 @@ def main():
                      help="worker job template to fill and submit — use "
                           "submit_worker_dielectric.sh.template for the dielectric workflow "
                           "(default: submit_worker.sh.template, the bandgap workflow)")
+    ap.add_argument("--config", type=Path, default=None,
+                     help="JSON config for the batch -- see CONFIG_REFERENCE.md. "
+                          "Def: config_bandgap.json or config_dielectric.json next to "
+                          "this script, matching whichever --template you picked. "
+                          "Resolved ONCE and frozen to run-root/config_used.json on "
+                          "first submission for this run-root (see config.py).")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
-
-    args.run_root.mkdir(parents=True, exist_ok=True)
-    (args.run_root / "_worker_logs").mkdir(parents=True, exist_ok=True)
 
     code_dir = Path(__file__).resolve().parent
     template = Path(args.template)
@@ -46,11 +51,26 @@ def main():
               f"at {code_dir}, or pass an absolute path via --template).")
         return
 
+    is_dielectric = "dielectric" in template.name
+    fields = _config.DIELECTRIC_CONFIG_FIELDS if is_dielectric else _config.BANDGAP_CONFIG_FIELDS
+    config_path = args.config
+    if config_path is None:
+        config_path = code_dir / ("config_dielectric.json" if is_dielectric else "config_bandgap.json")
+
+    args.run_root.mkdir(parents=True, exist_ok=True)
+    (args.run_root / "_worker_logs").mkdir(parents=True, exist_ok=True)
+    # .resolve() here matters: submit_worker.sh.template does `cd %CODE_DIR%`
+    # before invoking driver_local.py --config, so a relative frozen path
+    # would resolve against electronics-scripts/ instead of wherever this
+    # command was actually run from.
+    _resolved, frozen_config_path = _config.resolve_and_freeze(fields, config_path, args.run_root.resolve())
+
     text = template.read_text()
     text = (text
             .replace("%CODE_DIR%", str(code_dir))
             .replace("%STRUCTURES_DIR%", str(args.structures_dir.resolve()))
-            .replace("%RUN_ROOT%", str(args.run_root.resolve())))
+            .replace("%RUN_ROOT%", str(args.run_root.resolve()))
+            .replace("%CONFIG_PATH%", str(frozen_config_path)))
 
     filled_script = args.run_root / "submit_worker.sh"
     filled_script.write_text(text)

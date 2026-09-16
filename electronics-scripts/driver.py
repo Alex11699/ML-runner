@@ -43,6 +43,7 @@ import json
 import subprocess
 from pathlib import Path
 
+import config as _config
 from claiming import ensure_dirs, claim_structure, release_claim, reclaim_stale_claims
 
 
@@ -57,14 +58,16 @@ def stage_status(struct_dir: Path) -> str | None:
 
 
 def fill_template(template_path: Path, out_path: Path, struct_file: Path,
-                   struct_dir: Path, run_root: Path, struct_name: str, code_dir: Path):
+                   struct_dir: Path, run_root: Path, struct_name: str, code_dir: Path,
+                   config_path: Path):
     text = template_path.read_text()
     text = (text
             .replace("%STRUCT_NAME%", struct_name)
             .replace("%STRUCT_FILE%", str(struct_file))
             .replace("%STRUCT_DIR%", str(struct_dir))
             .replace("%RUN_ROOT%", str(run_root))
-            .replace("%CODE_DIR%", str(code_dir)))
+            .replace("%CODE_DIR%", str(code_dir))
+            .replace("%CONFIG_PATH%", str(config_path)))
     out_path.write_text(text)
 
 
@@ -78,11 +81,20 @@ def submit(script_path: Path, dependency_jobid: str = None) -> str:
 
 
 def main():
+    code_dir = Path(__file__).resolve().parent
+
     ap = argparse.ArgumentParser()
     ap.add_argument("--structures-dir", required=True, type=Path,
                      help="where your structure files live -- never modified or moved")
     ap.add_argument("--run-root", required=True, type=Path)
     ap.add_argument("--pattern", default="*.cif")
+    ap.add_argument("--config", type=Path, default=code_dir / "config_bandgap.json",
+                     help="JSON config for both scf and bands stages -- see "
+                          "CONFIG_REFERENCE.md. Def: config_bandgap.json next to "
+                          "this script. Resolved ONCE and frozen to "
+                          "run-root/config_used.json on first submission for "
+                          "this run-root; later --config edits don't retroactively "
+                          "change an already-started batch (see config.py).")
     ap.add_argument("--dry-run", action="store_true",
                      help="claim, fill templates, and print sbatch commands without submitting")
     ap.add_argument("--force", action="store_true",
@@ -95,7 +107,12 @@ def main():
                           "use this if you're certain nothing is queued/running")
     args = ap.parse_args()
 
-    args.run_root.mkdir(parents=True, exist_ok=True)
+    _resolved, config_path = _config.resolve_and_freeze(
+        _config.BANDGAP_CONFIG_FIELDS, args.config, args.run_root.resolve())
+    # .resolve() matters here: submit_scf.sh.template/submit_bands.sh.template
+    # do `cd %CODE_DIR%` before running python, so a relative frozen path
+    # would resolve against electronics-scripts/ instead of run_root.
+
     claims_dir = ensure_dirs(args.run_root)
 
     if args.reclaim_all_claims:
@@ -104,7 +121,6 @@ def main():
         reclaim_stale_claims(claims_dir, stale_minutes=args.reclaim_stale_minutes)
 
     ledger = {}
-    code_dir = Path(__file__).resolve().parent
     scf_template = code_dir / "submit_scf.sh.template"
     bands_template = code_dir / "submit_bands.sh.template"
 
@@ -133,8 +149,8 @@ def main():
         scf_script = struct_dir / "submit_scf.sh"
         bands_script = struct_dir / "submit_bands.sh"
 
-        fill_template(scf_template, scf_script, struct_file, struct_dir, args.run_root, name, code_dir)
-        fill_template(bands_template, bands_script, struct_file, struct_dir, args.run_root, name, code_dir)
+        fill_template(scf_template, scf_script, struct_file, struct_dir, args.run_root, name, code_dir, config_path)
+        fill_template(bands_template, bands_script, struct_file, struct_dir, args.run_root, name, code_dir, config_path)
 
         entry = {"structure_file": str(struct_file)}
 

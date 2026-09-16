@@ -20,6 +20,7 @@ import time
 from pathlib import Path
 
 from claiming import ensure_dirs, claim_structure, release_claim, reclaim_stale_claims
+import config as _config
 
 REQUIRED_ENV_VARS = ["ASE_VASP_COMMAND", "VASP_PP_PATH"]
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -62,6 +63,11 @@ def main():
     ap.add_argument("--structures-dir", required=True, type=Path)
     ap.add_argument("--run-root", required=True, type=Path)
     ap.add_argument("--pattern", default="*.cif")
+    ap.add_argument("--config", type=Path, default=SCRIPT_DIR / "config_dielectric.json",
+                     help="JSON config for the DFPT run -- see CONFIG_REFERENCE.md. "
+                          "Def: config_dielectric.json next to this script. Resolved "
+                          "ONCE and frozen to run-root/config_used.json on first "
+                          "submission for this run-root (see config.py).")
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--stop-on-first-failure", action="store_true")
     ap.add_argument("--force", action="store_true")
@@ -70,7 +76,9 @@ def main():
     args = ap.parse_args()
 
     env_check()
-    args.run_root.mkdir(parents=True, exist_ok=True)
+    _resolved, config_path = _config.resolve_and_freeze(
+        _config.DIELECTRIC_CONFIG_FIELDS, args.config, args.run_root)
+    os.environ["DIELECTRIC_CONFIG_PATH"] = str(config_path)
     claims_dir = ensure_dirs(args.run_root)
 
     if args.reclaim_all_claims:

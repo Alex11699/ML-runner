@@ -1,0 +1,8 @@
+{
+  "algo": "Normal",
+  "ediff": 1e-08,
+  "encut": 800.0,
+  "kspacing": 0.2,
+  "nelm": 120,
+  "sigma_elec": 0.05
+}

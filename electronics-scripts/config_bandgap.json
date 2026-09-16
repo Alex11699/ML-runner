@@ -1,0 +1,10 @@
+{
+  "algo": "Normal",
+  "ediff": 1e-08,
+  "encut": 800.0,
+  "functional": "pbe",
+  "kspacing_scf": 0.2,
+  "nelm": 120,
+  "prec": "Accurate",
+  "sigma_elec": 0.1
+}

@@ -41,6 +41,7 @@ mkdir -p %RUN_ROOT%/_worker_logs
 # for >3h before starting -- safe even if other workers are still genuinely
 # active, since a live claim will have a recent mtime.
 python driver_local.py --structures-dir %STRUCTURES_DIR% --run-root %RUN_ROOT% \
+    --config %CONFIG_PATH% \
     --reclaim-stale-minutes 180
 
 # --------------------------------------------------------------------------
