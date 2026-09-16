@@ -1,0 +1,51 @@
+#!/bin/bash
+#SBATCH --nodes=1
+##SBATCH --ntasks-per-node=32
+##SBATCH --cpus-per-task=4
+#SBATCH --ntasks-per-node=128
+#SBATCH --cpus-per-task=1
+#SBATCH --mem-per-cpu=3850
+#SBATCH --account=su007-bk
+#SBATCH --partition=compute
+#SBATCH --time=48:00:00
+#SBATCH --job-name=dielectric_worker
+#SBATCH --output=%RUN_ROOT%/_worker_logs/slurm-%j.out
+#SBATCH --error=%RUN_ROOT%/_worker_logs/slurm-%j.err
+
+# Same job-packing pattern as submit_worker.sh.template (bandgap workflow):
+# ONE worker job drains structures sequentially from the shared pool for up
+# to 48h. Submit several concurrently via launch_workers.py to parallelise
+# across the batch. Separate run-root from the bandgap workflow -- keep this
+# workflow's structures/run-root distinct (e.g. runs_dielectric/) so the two
+# don't collide.
+#
+# NOTE: unlike the bandgap SCF/bands jobs, this workflow's INCAR (IBRION=8,
+# LEPSILON) does NOT support NPAR/NCORE parallelization at all -- see
+# common_dielectric.py's module docstring. Nothing to configure here for
+# that; it's handled (by omission) in the calculator itself.
+
+module purge
+module load intel/2019b HDF5/1.10.5
+
+export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK}
+unset I_MPI_PMI_LIBRARY
+
+# Same essential fix as the bandgap templates -- Intel-compiled VASP with
+# hybrid MPI+OpenMP needs this or it segfaults (SIGSEGV, for__signal_handl).
+ulimit -s unlimited #needed for VASP !!!
+
+path=$HOME/APPS/vasp.6.3.2
+exe=vasp_std
+APP=$path/$exe
+
+export ASE_VASP_COMMAND="srun $APP"
+export VASP_PP_PATH="/home/m/msrbzq/VASP-PPs"
+
+source /home/m/msrbzq/APPS/miniconda3/etc/profile.d/conda.sh
+conda activate bandgap-env
+
+cd %CODE_DIR%
+mkdir -p %RUN_ROOT%/_worker_logs
+
+python driver_local_dielectric.py --structures-dir %STRUCTURES_DIR% --run-root %RUN_ROOT% \
+    --reclaim-stale-minutes 180
