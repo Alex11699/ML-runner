@@ -36,8 +36,14 @@ def main():
 
     code_dir = Path(__file__).resolve().parent
     template = Path(args.template)
+    if not template.is_absolute():
+        # Resolve against this script's own location (not the current working
+        # directory), so this works when invoked from a clean structures/runs
+        # working directory -- same convention as driver_local.py's SCRIPT_DIR.
+        template = code_dir / template
     if not template.exists():
-        print(f"Expected {template} in the current directory (same place as launch_workers.py itself).")
+        print(f"Expected {template} to exist (looked next to launch_workers.py itself "
+              f"at {code_dir}, or pass an absolute path via --template).")
         return
 
     text = template.read_text()

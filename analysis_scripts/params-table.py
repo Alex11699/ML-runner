@@ -87,8 +87,8 @@ def main():
     # Check if running in table mode (no plots)
     table_mode = '--table' in sys.argv
 
-    dft_dir = '../DFT_outputs'
-    ml_dir = './outputs'
+    dft_dir = '../DFT_outputs/original-uniq-structs-Converged/'
+    ml_dir = './single-points'
     method_name = os.path.basename(os.getcwd())
 
     dft_lattice = get_files_with_lattice(dft_dir)

@@ -104,8 +104,9 @@ def main():
         reclaim_stale_claims(claims_dir, stale_minutes=args.reclaim_stale_minutes)
 
     ledger = {}
-    scf_template = Path("submit_scf.sh.template")
-    bands_template = Path("submit_bands.sh.template")
+    code_dir = Path(__file__).resolve().parent
+    scf_template = code_dir / "submit_scf.sh.template"
+    bands_template = code_dir / "submit_bands.sh.template"
 
     candidates = sorted(args.structures_dir.glob(args.pattern))
     if not candidates:
@@ -113,7 +114,6 @@ def main():
         return
 
     n_submitted = 0
-    code_dir = Path(__file__).resolve().parent
 
     for struct_file in candidates:
         name = struct_file.stem

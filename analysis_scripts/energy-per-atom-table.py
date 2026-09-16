@@ -127,8 +127,8 @@ def main():
     # Check if running in table mode (no plots)
     table_mode = '--table' in sys.argv or '--rmse-only' in sys.argv
     
-    dft_dir = '../DFT_outputs'
-    ml_dir = '.'
+    dft_dir = '../DFT_outputs/original-uniq-structs-Converged'  # Adjust this path as needed
+    ml_dir = './single-points'  # Adjust this path as needed
     method_name = os.path.basename(os.getcwd())  # Get ML method name from the current working directory
 
     # Retrieve energy per atom values for both directories

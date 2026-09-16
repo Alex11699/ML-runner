@@ -36,7 +36,8 @@ fixed here from the start rather than carrying the same latent risk.
 import numpy as np
 from ase.calculators.vasp import Vasp
 
-ENCUT = 600.0
+ENCUT = 800.0  # matches the relaxation / bandgap-workflow ENCUT (common.py) --
+# must stay consistent with whatever ENCUT the input geometry was relaxed at.
 ALGO = "Normal"
 NELM = 120
 SIGMA_ELEC = 0.05
@@ -60,8 +61,9 @@ def make_dielectric_calculator(directory: str) -> Vasp:
         nelm=NELM,
         ismear=0,
         sigma=SIGMA_ELEC,
-        ediff=1e-8,          # tighter than the bandgap workflow's 1e-6 -- this is
-        # a second-derivative property, more sensitive to electronic convergence.
+        ediff=1e-8,          # matches the bandgap workflow's ediff (both now at
+        # 1e-8/PREC=Accurate, confirmed) -- kept explicit here since this is a
+        # second-derivative property, more sensitive to electronic convergence.
         kspacing=KSPACING,
         pp="PBE",            # see module docstring — explicit, not left to default
         gga="PE",
