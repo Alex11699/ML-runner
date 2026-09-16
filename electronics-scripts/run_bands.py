@@ -14,8 +14,8 @@ import shutil
 from pathlib import Path
 from ase.io import read
 
-from common import make_bands_calculator, extract_gap, run_vasp_with_explicit_kpoints
-from claiming import finalize_structure
+from common import make_bands_calculator, extract_gap, run_vasp_with_explicit_kpoints, stage_vdw_kernel
+from claiming import ensure_dirs, release_claim
 from pymatgen.io.vasp.inputs import Kpoints
 
 
@@ -45,7 +45,7 @@ def main():
         with open(bands_dir / "gap_result.json", "w") as f:
             json.dump(result, f, indent=2)
         print(f"[{name}] prerequisite files missing, aborting: {missing}")
-        finalize_structure(struct_path, run_root, success=False)
+        release_claim(name, ensure_dirs(run_root))
         sys.exit(1)
 
     shutil.copy(chgcar_src, bands_dir / "CHGCAR")
@@ -56,6 +56,7 @@ def main():
     kpoints_obj = Kpoints.from_file(str(seekpath_kpoints_path))
 
     calc = make_bands_calculator(str(bands_dir))
+    stage_vdw_kernel(str(bands_dir))  # no-op unless USE_OPTB88_VDW is set in common.py
 
     result = {"structure": name, "stage": "bands"}
     try:
@@ -78,8 +79,10 @@ def main():
         json.dump(result, f, indent=2)
 
     # This is always the terminal stage for a structure (nothing runs after
-    # bands), so finalize here regardless of outcome.
-    finalize_structure(struct_path, run_root, success=(result["status"] == "ok"))
+    # bands), so release the claim here regardless of outcome. The
+    # structure file itself never moved; result["status"] in this
+    # gap_result.json is the actual record of success/failure.
+    release_claim(name, ensure_dirs(run_root))
 
     if result["status"] != "ok":
         print(f"[{name}] bands stage problem: {result.get('error')}")

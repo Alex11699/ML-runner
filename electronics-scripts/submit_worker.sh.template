@@ -1,0 +1,55 @@
+#!/bin/bash
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=128
+#SBATCH --cpus-per-task=1
+#SBATCH --mem-per-cpu=3850
+#SBATCH --account=su007-bk
+#SBATCH --partition=compute
+#SBATCH --time=24:00:00
+#SBATCH --job-name=bandgap_worker
+#SBATCH --output=%RUN_ROOT%/_worker_logs/slurm-%j.out
+#SBATCH --error=%RUN_ROOT%/_worker_logs/slurm-%j.err
+
+module purge
+module load intel/2019b HDF5/1.10.5
+
+export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK}
+unset I_MPI_PMI_LIBRARY
+
+ulimit -s unlimited #needed for VASP !!!
+
+path=$HOME/APPS/vasp.6.3.2
+exe=vasp_std
+APP=$path/$exe
+
+export ASE_VASP_COMMAND="srun $APP"
+export VASP_PP_PATH="/home/m/msrbzq/VASP-PPs"
+export VDW_KERNEL_PATH="$HOME/APPS/vasp.6.3.2/vdw_kernel.bindat"
+
+source /home/m/msrbzq/APPS/miniconda3/etc/profile.d/conda.sh
+conda activate bandgap-env
+
+cd %CODE_DIR%
+mkdir -p %RUN_ROOT%/_worker_logs
+
+# No --limit: drains the pending pool until it's empty or this job's
+# walltime runs out, whichever comes first.
+#
+# --reclaim-stale-minutes 180: if a PREVIOUS worker was killed mid-structure
+# by hitting its own walltime, that structure is left claimed (sitting in
+# _structures_inprogress, unfinished). This sweeps back anything untouched
+# for >3h before starting -- safe even if other workers are still genuinely
+# active, since a live claim will have a recent mtime.
+python driver_local.py --structures-dir %STRUCTURES_DIR% --run-root %RUN_ROOT% \
+    --reclaim-stale-minutes 180
+
+# --------------------------------------------------------------------------
+# Usage:
+#   1. Fill %CODE_DIR%, %STRUCTURES_DIR%, %RUN_ROOT% (see launch_workers.py)
+#   2. Submit K copies concurrently, e.g.:
+#        for i in $(seq 1 10); do sbatch runs/submit_worker.sh; done
+#      Pick K based on your su007-bk core-hour budget and desired turnaround.
+#   3. If a batch doesn't finish, just submit another round the same way --
+#      --reclaim-stale-minutes above sweeps up anything left stuck from
+#      workers that hit their walltime, so no manual cleanup needed.
+# --------------------------------------------------------------------------

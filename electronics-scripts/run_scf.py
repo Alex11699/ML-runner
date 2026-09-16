@@ -13,8 +13,8 @@ import json
 from pathlib import Path
 from ase.io import read, write
 
-from common import make_scf_calculator, get_seekpath_primitive_and_kpoints
-from claiming import finalize_structure
+from common import make_scf_calculator, get_seekpath_primitive_and_kpoints, stage_vdw_kernel
+from claiming import ensure_dirs, release_claim
 
 
 def main():
@@ -45,6 +45,7 @@ def main():
 
     atoms = primitive_atoms
     calc = make_scf_calculator(str(workdir))
+    stage_vdw_kernel(str(workdir))  # no-op unless USE_OPTB88_VDW is set in common.py
     atoms.calc = calc
 
     status = {"structure": name, "stage": "scf",
@@ -66,11 +67,10 @@ def main():
     if status["status"] != "ok" or not status.get("chgcar_written"):
         print(f"[{name}] SCF failed or CHGCAR missing: {status.get('error', 'no CHGCAR')}")
         # Under sbatch, the bands job's afterok dependency means it will never
-        # run if SCF failed — so nothing else will ever finalize this
-        # structure. Move it to failed now rather than leaving it stuck in
-        # _structures_inprogress forever. (Under driver_local.py this is a
-        # no-op duplicate of what would happen anyway, which is fine.)
-        finalize_structure(struct_path, run_root, success=False)
+        # run if SCF failed — so nothing else will ever release this claim.
+        # The structure file itself never moves; its status.json (status=
+        # "failed") is what future runs check to know it needs retrying.
+        release_claim(name, ensure_dirs(run_root))
         sys.exit(1)
 
     print(f"[{name}] SCF ok, energy={energy:.6f} eV")

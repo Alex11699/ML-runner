@@ -1,0 +1,36 @@
+#!/bin/bash
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=128
+#SBATCH --cpus-per-task=1
+#SBATCH --mem-per-cpu=3850
+#SBATCH --account=su007-bk
+#SBATCH --partition=compute
+#SBATCH --time=02:00:00
+#SBATCH --job-name=scf_%STRUCT_NAME%
+#SBATCH --output=%STRUCT_DIR%/scf/slurm-%j.out
+#SBATCH --error=%STRUCT_DIR%/scf/slurm-%j.err
+
+module purge
+module load intel/2019b HDF5/1.10.5
+
+export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK}
+unset I_MPI_PMI_LIBRARY
+
+ulimit -s unlimited #needed for VASP !!!
+
+path=$HOME/APPS/vasp.6.3.2
+exe=vasp_std
+APP=$path/$exe
+
+export ASE_VASP_COMMAND="srun $APP"
+export VASP_PP_PATH="/home/m/msrbzq/VASP-PPs"
+export VDW_KERNEL_PATH="$HOME/APPS/vasp.6.3.2/vdw_kernel.bindat"
+# only needed when common.py's USE_OPTB88_VDW=True -- harmless to leave set
+# otherwise, since stage_vdw_kernel() no-ops when that flag is off.
+
+source /home/m/msrbzq/APPS/miniconda3/etc/profile.d/conda.sh
+conda activate bandgap-env
+
+cd %CODE_DIR%
+
+python run_scf.py "%STRUCT_FILE%" "%RUN_ROOT%"
