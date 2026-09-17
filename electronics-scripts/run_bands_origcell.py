@@ -19,7 +19,7 @@ from pathlib import Path
 from ase.io import read
 
 from common import make_bands_calculator, extract_gap, run_vasp_with_explicit_kpoints, stage_vdw_kernel
-from claiming import ensure_dirs, release_claim
+from claiming import ensure_dirs, release_claim, write_status
 from pymatgen.io.vasp.inputs import Kpoints
 
 
@@ -46,8 +46,7 @@ def main():
     if missing:
         result = {"structure": name, "stage": "bands", "status": "failed",
                   "error": f"missing/empty required file(s) from SCF stage: {[str(p) for p in missing]}"}
-        with open(bands_dir / "gap_result.json", "w") as f:
-            json.dump(result, f, indent=2)
+        write_status(bands_dir / "gap_result.json", result)
         print(f"[{name}] prerequisite files missing, aborting: {missing}")
         release_claim(name, ensure_dirs(run_root))
         sys.exit(1)
@@ -79,8 +78,7 @@ def main():
         result["status"] = "failed"
         result["error"] = str(e)
 
-    with open(bands_dir / "gap_result.json", "w") as f:
-        json.dump(result, f, indent=2)
+    write_status(bands_dir / "gap_result.json", result)
 
     release_claim(name, ensure_dirs(run_root))
 

@@ -14,19 +14,94 @@ gap_result.json / dielectric_result.json) under run_root/<name>/ -- never by
 which directory the input file currently happens to sit in, because it only
 ever sits in one place.
 
-One consequence worth knowing: a structure whose last recorded status is
-"failed" (not "ok") is NOT specially quarantined anymore -- the next batch
-run will simply attempt it again, since only "ok" causes a skip. This is
-what makes redos low-friction, but it does mean a structure that fails for a
-persistent, non-transient reason will be retried every time you rerun the
-batch, burning compute each time, until you either fix the underlying issue
-or explicitly filter it out. If you'd rather failed structures require
-deliberate action to retry, say so and this can be changed to skip on ANY
-recorded status (not just "ok") unless --force is passed.
+DEFAULT RETRY BEHAVIOR (changed 2026-09): a structure whose last recorded
+status is anything other than "ok" (failed, gap_extraction_failed,
+extraction_failed) is now skipped on subsequent batch runs by default, same
+as a successful one -- not silently re-attempted. This was the earlier
+behavior's known failure mode: with only "ok" causing a skip, a structure
+that fails for a persistent, non-transient reason (a genuinely bad CSP
+geometry, a systematic convergence issue) got reclaimed and re-run by
+whichever worker in the pool next became free, indefinitely, for the rest
+of the walltime -- confirmed in practice: 13/14 structures completing in
+~250s each, the pool spending the remaining 18+ hours alternating retries
+of the one structure that fails deterministically, with the workers never
+exiting because the "pending pool" never actually empties.
+
+Each driver script (driver.py / driver_local.py / driver_local_origcell.py /
+driver_local_dielectric.py) now exposes:
+  --retry-failed   opt back into re-attempting structures with a non-ok
+                    status (but never "ok" ones) -- use after you've fixed
+                    whatever caused the failure, or want to see if it was
+                    transient.
+  --max-retries N  (default 3) even under --retry-failed, a structure whose
+                    recorded attempts (see write_status/read_status below)
+                    reaches this cap is skipped anyway -- so a permanently-
+                    broken structure can't reproduce the same walltime-
+                    burning loop just because --retry-failed was passed.
+  --force          unchanged: redo EVERYTHING regardless of recorded status,
+                    including structures that already succeeded.
 """
+import json
 import os
 import time
 from pathlib import Path
+
+
+def write_status(status_path: Path, status_dict: dict) -> dict:
+    """
+    Write a stage's status JSON (scf_status.json / gap_result.json /
+    dielectric_result.json), stamping it with a cumulative "attempts" count:
+    read from any prior file at this same path (0 if none, or unreadable),
+    incremented by 1. This is what --max-retries checks against, so a
+    structure that keeps failing under --retry-failed still eventually
+    stops being reattempted rather than looping unboundedly. Returns the
+    dict actually written (status_dict plus "attempts").
+    """
+    attempts = 0
+    if status_path.exists():
+        try:
+            attempts = json.loads(status_path.read_text()).get("attempts", 0)
+        except (json.JSONDecodeError, OSError):
+            pass
+    status_dict = dict(status_dict)
+    status_dict["attempts"] = attempts + 1
+    status_path.write_text(json.dumps(status_dict, indent=2))
+    return status_dict
+
+
+def read_status(status_path: Path) -> tuple[str | None, int]:
+    """
+    Companion to write_status(): returns (status, attempts) for a stage's
+    status JSON -- (None, 0) if the file doesn't exist or can't be parsed
+    (e.g. read mid-write). status is None for "never attempted", one of
+    the stage's own status strings ("ok", "failed", ...) otherwise.
+    """
+    if not status_path.exists():
+        return None, 0
+    try:
+        data = json.loads(status_path.read_text())
+        return data.get("status"), data.get("attempts", 0)
+    except (json.JSONDecodeError, OSError):
+        return None, 0
+
+
+def should_attempt(status_path: Path, args) -> bool:
+    """
+    The shared skip/attempt decision every driver's candidate loop uses.
+    `args` needs .force, .retry_failed, .max_retries (all four driver
+    scripts expose these identically). Returns True if this structure
+    should be (re)attempted now.
+    """
+    if args.force:
+        return True
+    status, attempts = read_status(status_path)
+    if status is None:
+        return True  # never attempted
+    if status == "ok":
+        return False  # always skip successes
+    if not args.retry_failed:
+        return False  # new default: don't auto-retry a recorded failure
+    return attempts < args.max_retries
 
 
 def ensure_dirs(run_root: Path):

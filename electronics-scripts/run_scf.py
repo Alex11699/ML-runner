@@ -14,7 +14,7 @@ from pathlib import Path
 from ase.io import read, write
 
 from common import make_scf_calculator, get_seekpath_primitive_and_kpoints, stage_vdw_kernel
-from claiming import ensure_dirs, release_claim
+from claiming import ensure_dirs, release_claim, write_status
 
 
 def main():
@@ -60,8 +60,7 @@ def main():
         status["status"] = "failed"
         status["error"] = str(e)
 
-    with open(workdir / "scf_status.json", "w") as f:
-        json.dump(status, f, indent=2)
+    status = write_status(workdir / "scf_status.json", status)
 
     # non-zero exit on failure so the Slurm dependency (afterok) blocks the bands job
     if status["status"] != "ok" or not status.get("chgcar_written"):

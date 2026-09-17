@@ -18,6 +18,17 @@ whole gap_workflow directory and point every new calculation at it:
 
 No need to copy any .py file into each calculation's own directory.
 
+RETRY BEHAVIOR (see claiming.py's module docstring for the full story): a
+structure whose last recorded status (SCF or bands) is anything other than
+"ok" is, by default, NOT reattempted on a later invocation -- it's treated
+as settled, same as a success, so it stops being reclaimed. This is what
+stops a single persistently-failing structure from being retried by
+whichever worker in the pool next frees up, indefinitely, for the rest of
+the walltime (confirmed in practice: 13/14 structures done in ~250s each,
+the pool then spending 18+ hours alternating retries of the 14th). Use
+--retry-failed to opt back into reattempting failures, capped by
+--max-retries so that doesn't reproduce the same loop.
+
 Usage:
     python driver_local.py --structures-dir inputs/ --run-root runs/ --limit 5
 """
@@ -30,7 +41,7 @@ import sys
 import time
 from pathlib import Path
 
-from claiming import ensure_dirs, claim_structure, release_claim, reclaim_stale_claims
+from claiming import ensure_dirs, claim_structure, release_claim, reclaim_stale_claims, read_status, should_attempt
 import config as _config
 
 REQUIRED_ENV_VARS = ["ASE_VASP_COMMAND", "VASP_PP_PATH"]
@@ -55,15 +66,31 @@ def instance_tag() -> str:
     return f"job{job_id}_pid{os.getpid()}" if job_id else f"pid{os.getpid()}"
 
 
-def stage_status(struct_dir: Path, stage: str) -> str | None:
-    status_file = (struct_dir / "scf" / "scf_status.json" if stage == "scf"
-                    else struct_dir / "bands" / "gap_result.json")
-    if not status_file.exists():
-        return None
-    try:
-        return json.loads(status_file.read_text()).get("status")
-    except (json.JSONDecodeError, OSError):
-        return None
+def status_paths(struct_dir: Path):
+    return struct_dir / "scf" / "scf_status.json", struct_dir / "bands" / "gap_result.json"
+
+
+def structure_needs_attempt(struct_dir: Path, args) -> bool:
+    """
+    Top-level "is there anything left to do for this structure right now"
+    check, used both to decide whether to claim a candidate and to detect
+    pool exhaustion. A structure is settled (returns False) once bands is
+    "ok", OR once whichever stage last failed is not going to be retried
+    (SCF failing permanently blocks bands from ever running, so that alone
+    settles the structure without needing to check bands at all).
+    """
+    if args.force:
+        return True
+    scf_path, bands_path = status_paths(struct_dir)
+    scf_status, _ = read_status(scf_path)
+    bands_status, _ = read_status(bands_path)
+    if bands_status == "ok":
+        return False
+    if scf_status is not None and scf_status != "ok" and not should_attempt(scf_path, args):
+        return False  # SCF permanently failed -- bands can never run
+    if bands_status is not None and bands_status != "ok" and not should_attempt(bands_path, args):
+        return False  # bands permanently failed
+    return True
 
 
 def run_stage(script_name: str, struct_file: Path, run_root: Path, log_path: Path) -> bool:
@@ -100,7 +127,21 @@ def main():
                      help="max structures THIS instance will process (not a global cap)")
     ap.add_argument("--stop-on-first-failure", action="store_true")
     ap.add_argument("--force", action="store_true",
-                     help="ignore existing scf_status.json/gap_result.json and rerun both stages anyway")
+                     help="ignore existing scf_status.json/gap_result.json and rerun "
+                          "both stages anyway, including structures that already "
+                          "succeeded -- see also --retry-failed for a narrower option")
+    ap.add_argument("--retry-failed", action="store_true",
+                     help="reattempt structures whose last recorded status was a "
+                          "failure (but never ones that already succeeded), up to "
+                          "--max-retries attempts. Without this, a structure that "
+                          "failed is skipped on later invocations, same as a "
+                          "success -- see claiming.py's module docstring for why "
+                          "that's the default.")
+    ap.add_argument("--max-retries", type=int, default=3,
+                     help="even under --retry-failed, stop reattempting a structure "
+                          "once its recorded attempts (this stage) reaches this many "
+                          "(def: 3) -- keeps a permanently-broken structure from "
+                          "reproducing the same walltime-burning loop")
     ap.add_argument("--reclaim-stale-minutes", type=float, default=None,
                      help="at startup, release lock files older than this many minutes, "
                           "left behind by a worker that was killed mid-structure")
@@ -140,8 +181,7 @@ def main():
             cand_name = cand.stem
             struct_dir = args.run_root / cand_name
 
-            # Skip anything already successfully completed, unless --force.
-            if not args.force and stage_status(struct_dir, "bands") == "ok":
+            if not structure_needs_attempt(struct_dir, args):
                 continue
 
             if claim_structure(cand_name, claims_dir):
@@ -150,11 +190,17 @@ def main():
             # else: someone else holds this claim right now -- try the next candidate
 
         if struct_file is None:
-            # Every candidate is either done or currently claimed by someone else.
+            # Every candidate is either settled (done or permanently failed)
+            # or currently claimed by someone else.
             remaining = [c for c in candidates
-                         if args.force or stage_status(args.run_root / c.stem, "bands") != "ok"]
+                         if structure_needs_attempt(args.run_root / c.stem, args)]
             if not remaining:
-                print(f"[{tag}] all structures completed.")
+                n_ok_settled = sum(1 for c in candidates
+                                    if read_status(status_paths(args.run_root / c.stem)[1])[0] == "ok")
+                n_failed_settled = len(candidates) - n_ok_settled
+                print(f"[{tag}] all structures settled: {n_ok_settled} completed, "
+                      f"{n_failed_settled} permanently failed (not retried -- pass "
+                      f"--retry-failed to reattempt those).")
                 break
             print(f"[{tag}] all remaining candidates currently claimed elsewhere — retrying.")
             time.sleep(1)
@@ -163,17 +209,24 @@ def main():
         struct_dir = args.run_root / name
         (struct_dir / "scf").mkdir(parents=True, exist_ok=True)
         (struct_dir / "bands").mkdir(parents=True, exist_ok=True)
+        scf_status_path, bands_status_path = status_paths(struct_dir)
 
         entry = {"structure_file": str(struct_file), "claimed_by": tag}
         t0 = time.time()
         n_processed += 1
         print(f"\n=== [{tag}] ({n_processed}{f'/{args.limit}' if args.limit else ''}) {name}: SCF ===")
 
-        scf_prior = None if args.force else stage_status(struct_dir, "scf")
-        if scf_prior == "ok":
+        scf_status, _ = read_status(scf_status_path)
+        if scf_status == "ok" and not args.force:
             print(f"[{name}] SCF already completed (resume) — skipping.")
             scf_ok = True
             entry["scf_status"] = "ok (resumed)"
+        elif scf_status is not None and scf_status != "ok" and not should_attempt(scf_status_path, args):
+            print(f"[{name}] SCF previously failed ({scf_status}) and won't be retried "
+                  f"(pass --retry-failed to reattempt, up to --max-retries). "
+                  f"Skipping bands too — it depends on SCF.")
+            scf_ok = False
+            entry["scf_status"] = f"skipped (previously {scf_status})"
         else:
             scf_ok = run_stage("run_scf.py", struct_file, args.run_root,
                                 struct_dir / "scf" / "driver_local.log")
@@ -181,11 +234,15 @@ def main():
 
         bands_ok = False
         if scf_ok:
-            bands_prior = None if args.force else stage_status(struct_dir, "bands")
-            if bands_prior == "ok":
+            bands_status, _ = read_status(bands_status_path)
+            if bands_status == "ok" and not args.force:
                 print(f"[{name}] bands already completed (resume) — skipping.")
                 bands_ok = True
                 entry["bands_status"] = "ok (resumed)"
+            elif bands_status is not None and bands_status != "ok" and not should_attempt(bands_status_path, args):
+                print(f"[{name}] bands previously failed ({bands_status}) and won't be "
+                      f"retried (pass --retry-failed to reattempt, up to --max-retries).")
+                entry["bands_status"] = f"skipped (previously {bands_status})"
             else:
                 print(f"=== [{tag}] {name}: bands ===")
                 bands_ok = run_stage("run_bands.py", struct_file, args.run_root,
@@ -195,8 +252,9 @@ def main():
             entry["bands_status"] = "skipped"
 
         # run_scf.py/run_bands.py already release their own claim on any
-        # path that actually executes; this covers the one gap (full
-        # resume, nothing executed this run) — release_claim is idempotent.
+        # path that actually executes; this covers the gaps (full resume,
+        # or a permanent-failure skip — nothing executed this run) —
+        # release_claim is idempotent.
         release_claim(name, claims_dir)
 
         entry["elapsed_seconds"] = round(time.time() - t0, 1)

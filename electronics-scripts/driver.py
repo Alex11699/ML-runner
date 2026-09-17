@@ -44,17 +44,12 @@ import subprocess
 from pathlib import Path
 
 import config as _config
-from claiming import ensure_dirs, claim_structure, release_claim, reclaim_stale_claims
+from claiming import ensure_dirs, claim_structure, release_claim, reclaim_stale_claims, read_status, should_attempt
 
 
 def stage_status(struct_dir: Path) -> str | None:
     status_file = struct_dir / "bands" / "gap_result.json"
-    if not status_file.exists():
-        return None
-    try:
-        return json.loads(status_file.read_text()).get("status")
-    except (json.JSONDecodeError, OSError):
-        return None
+    return read_status(status_file)[0]
 
 
 def fill_template(template_path: Path, out_path: Path, struct_file: Path,
@@ -98,7 +93,17 @@ def main():
     ap.add_argument("--dry-run", action="store_true",
                      help="claim, fill templates, and print sbatch commands without submitting")
     ap.add_argument("--force", action="store_true",
-                     help="ignore existing gap_result.json and resubmit anyway")
+                     help="ignore existing gap_result.json and resubmit anyway, "
+                          "including structures that already succeeded")
+    ap.add_argument("--retry-failed", action="store_true",
+                     help="resubmit structures whose last recorded status was a "
+                          "failure (but never ones that already succeeded), up to "
+                          "--max-retries attempts. Without this, re-running driver.py "
+                          "won't resubmit a structure that failed last time -- see "
+                          "claiming.py's module docstring for why that's the default.")
+    ap.add_argument("--max-retries", type=int, default=3,
+                     help="even under --retry-failed, stop resubmitting a structure "
+                          "once its recorded attempts reaches this many (def: 3)")
     ap.add_argument("--reclaim-stale-minutes", type=float, default=None,
                      help="at startup, release lock files older than this many minutes -- "
                           "see module docstring for the caveat about jobs still legitimately queued")
@@ -130,13 +135,17 @@ def main():
         return
 
     n_submitted = 0
+    n_skipped_failed = 0
 
     for struct_file in candidates:
         name = struct_file.stem
         struct_dir = args.run_root / name
 
-        if not args.force and stage_status(struct_dir) == "ok":
-            continue  # already completed, checked via its own gap_result.json
+        status = stage_status(struct_dir)
+        if not should_attempt(struct_dir / "bands" / "gap_result.json", args):
+            if status is not None and status != "ok":
+                n_skipped_failed += 1
+            continue  # already ok, or previously failed and not retrying (checked via gap_result.json)
 
         if not claim_structure(name, claims_dir):
             continue  # already claimed (by a previous run of this driver, or another instance)
@@ -179,7 +188,8 @@ def main():
         json.dump(ledger, f, indent=2)
 
     print(f"\nSubmitted {n_submitted} structure(s) (skipped structures already completed or "
-          f"claimed by a previous run). Ledger written to {args.run_root / 'job_ledger.json'}")
+          f"claimed by a previous run; {n_skipped_failed} skipped as previously failed -- "
+          f"pass --retry-failed to reattempt those). Ledger written to {args.run_root / 'job_ledger.json'}")
 
 
 if __name__ == "__main__":

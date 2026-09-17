@@ -24,7 +24,7 @@ from ase.io import read, write
 
 from common import make_scf_calculator, stage_vdw_kernel
 from common_origcell import get_kpoints_orig_cell
-from claiming import ensure_dirs, release_claim
+from claiming import ensure_dirs, release_claim, write_status
 
 
 def main():
@@ -71,8 +71,7 @@ def main():
         status["status"] = "failed"
         status["error"] = str(e)
 
-    with open(workdir / "scf_status.json", "w") as f:
-        json.dump(status, f, indent=2)
+    status = write_status(workdir / "scf_status.json", status)
 
     if status["status"] != "ok" or not status.get("chgcar_written"):
         print(f"[{name}] SCF failed or CHGCAR missing: {status.get('error', 'no CHGCAR')}")

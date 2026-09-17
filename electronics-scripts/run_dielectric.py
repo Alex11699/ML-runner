@@ -20,7 +20,7 @@ from pathlib import Path
 from ase.io import read
 
 from common_dielectric import make_dielectric_calculator, extract_dielectric
-from claiming import ensure_dirs, release_claim
+from claiming import ensure_dirs, release_claim, write_status
 
 
 def main():
@@ -53,8 +53,7 @@ def main():
         result["status"] = "failed"
         result["error"] = str(e)
 
-    with open(workdir / "dielectric_result.json", "w") as f:
-        json.dump(result, f, indent=2)
+    write_status(workdir / "dielectric_result.json", result)
 
     # This is the only (and therefore always terminal) stage for a structure
     # in this workflow, so release the claim here regardless of outcome.
