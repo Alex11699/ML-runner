@@ -1,13 +1,19 @@
 #!/usr/bin/env python
 """
-Fill submit_worker.sh.template once and submit K copies concurrently —
+Fill a submit_worker*.sh.template once and submit K copies concurrently —
 K sbatch calls total, each an independent worker draining the shared
-structure pool via driver_local.py's claim loop (see submit_worker.sh.template
-for the reasoning).
+structure pool via the matching driver_local*.py's claim loop. Serves all
+three production workflows (bandgap/dielectric/phonons) via --template;
+see submit_worker.sh.template for the job-packing reasoning shared by all
+of them.
 
 Usage:
     python launch_workers.py --structures-dir structures/ --run-root runs/ \
         --n-workers 10
+
+    python launch_workers.py --structures-dir structures/ \
+        --run-root runs_phonons/ --n-workers 10 \
+        --template submit_worker_phonons.sh.template
 
     python launch_workers.py ... --dry-run   # fill + print, don't submit
 """
@@ -28,14 +34,17 @@ def main():
                           "while running, so pick this based on that budget and desired turnaround")
     ap.add_argument("--template", default="submit_worker.sh.template",
                      help="worker job template to fill and submit — use "
-                          "submit_worker_dielectric.sh.template for the dielectric workflow "
-                          "(default: submit_worker.sh.template, the bandgap workflow)")
+                          "submit_worker_dielectric.sh.template for the dielectric workflow, "
+                          "submit_worker_phonons.sh.template for the finite-displacement "
+                          "phonon workflow (default: submit_worker.sh.template, the bandgap "
+                          "workflow)")
     ap.add_argument("--config", type=Path, default=None,
                      help="JSON config for the batch -- see CONFIG_REFERENCE.md. "
-                          "Def: config_bandgap.json or config_dielectric.json next to "
-                          "this script, matching whichever --template you picked. "
-                          "Resolved ONCE and frozen to run-root/config_used.json on "
-                          "first submission for this run-root (see config.py).")
+                          "Def: config_bandgap.json / config_dielectric.json / "
+                          "config_phonons.json next to this script, matching whichever "
+                          "--template you picked. Resolved ONCE and frozen to "
+                          "run-root/config_used.json on first submission for this "
+                          "run-root (see config.py).")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
@@ -51,11 +60,21 @@ def main():
               f"at {code_dir}, or pass an absolute path via --template).")
         return
 
-    is_dielectric = "dielectric" in template.name
-    fields = _config.DIELECTRIC_CONFIG_FIELDS if is_dielectric else _config.BANDGAP_CONFIG_FIELDS
+    # Field schema + default config template picked by name -- add a new
+    # elif here (not a new launch_workers_<x>.py copy) for any FUTURE
+    # workflow that follows this same one-worker-per-structure job-packing
+    # pattern; that's what this dispatch exists for. (launch_workers_origcell.py
+    # is a deliberate exception -- a one-off test variant, not a third
+    # production workflow, see its own docstring for why it's separate.)
+    if "dielectric" in template.name:
+        fields, default_config_name = _config.DIELECTRIC_CONFIG_FIELDS, "config_dielectric.json"
+    elif "phonons" in template.name:
+        fields, default_config_name = _config.PHONON_CONFIG_FIELDS, "config_phonons.json"
+    else:
+        fields, default_config_name = _config.BANDGAP_CONFIG_FIELDS, "config_bandgap.json"
     config_path = args.config
     if config_path is None:
-        config_path = code_dir / ("config_dielectric.json" if is_dielectric else "config_bandgap.json")
+        config_path = code_dir / default_config_name
 
     args.run_root.mkdir(parents=True, exist_ok=True)
     (args.run_root / "_worker_logs").mkdir(parents=True, exist_ok=True)
@@ -72,7 +91,12 @@ def main():
             .replace("%RUN_ROOT%", str(args.run_root.resolve()))
             .replace("%CONFIG_PATH%", str(frozen_config_path)))
 
-    filled_script = args.run_root / "submit_worker.sh"
+    # Named after the template used (submit_worker_phonons.sh, etc.), not a
+    # constant "submit_worker.sh" -- was constant here before, harmless as
+    # long as each workflow gets its own run-root (which config_used.json's
+    # freeze/verify already forces you to do), but confusing once there are
+    # three workflows' filled scripts to tell apart at a glance.
+    filled_script = args.run_root / template.name.replace(".template", "")
     filled_script.write_text(text)
     print(f"Filled worker script: {filled_script}")
 

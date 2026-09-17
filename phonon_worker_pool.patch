@@ -1,0 +1,214 @@
+diff --git a/electronics-scripts/launch_workers.py b/electronics-scripts/launch_workers.py
+index 9fed8fb..85475db 100644
+--- a/electronics-scripts/launch_workers.py
++++ b/electronics-scripts/launch_workers.py
+@@ -1,14 +1,20 @@
+ #!/usr/bin/env python
+ """
+-Fill submit_worker.sh.template once and submit K copies concurrently —
++Fill a submit_worker*.sh.template once and submit K copies concurrently —
+ K sbatch calls total, each an independent worker draining the shared
+-structure pool via driver_local.py's claim loop (see submit_worker.sh.template
+-for the reasoning).
++structure pool via the matching driver_local*.py's claim loop. Serves all
++three production workflows (bandgap/dielectric/phonons) via --template;
++see submit_worker.sh.template for the job-packing reasoning shared by all
++of them.
+ 
+ Usage:
+     python launch_workers.py --structures-dir structures/ --run-root runs/ \
+         --n-workers 10
+ 
++    python launch_workers.py --structures-dir structures/ \
++        --run-root runs_phonons/ --n-workers 10 \
++        --template submit_worker_phonons.sh.template
++
+     python launch_workers.py ... --dry-run   # fill + print, don't submit
+ """
+ import argparse
+@@ -28,14 +34,17 @@ def main():
+                           "while running, so pick this based on that budget and desired turnaround")
+     ap.add_argument("--template", default="submit_worker.sh.template",
+                      help="worker job template to fill and submit — use "
+-                          "submit_worker_dielectric.sh.template for the dielectric workflow "
+-                          "(default: submit_worker.sh.template, the bandgap workflow)")
++                          "submit_worker_dielectric.sh.template for the dielectric workflow, "
++                          "submit_worker_phonons.sh.template for the finite-displacement "
++                          "phonon workflow (default: submit_worker.sh.template, the bandgap "
++                          "workflow)")
+     ap.add_argument("--config", type=Path, default=None,
+                      help="JSON config for the batch -- see CONFIG_REFERENCE.md. "
+-                          "Def: config_bandgap.json or config_dielectric.json next to "
+-                          "this script, matching whichever --template you picked. "
+-                          "Resolved ONCE and frozen to run-root/config_used.json on "
+-                          "first submission for this run-root (see config.py).")
++                          "Def: config_bandgap.json / config_dielectric.json / "
++                          "config_phonons.json next to this script, matching whichever "
++                          "--template you picked. Resolved ONCE and frozen to "
++                          "run-root/config_used.json on first submission for this "
++                          "run-root (see config.py).")
+     ap.add_argument("--dry-run", action="store_true")
+     args = ap.parse_args()
+ 
+@@ -51,11 +60,21 @@ def main():
+               f"at {code_dir}, or pass an absolute path via --template).")
+         return
+ 
+-    is_dielectric = "dielectric" in template.name
+-    fields = _config.DIELECTRIC_CONFIG_FIELDS if is_dielectric else _config.BANDGAP_CONFIG_FIELDS
++    # Field schema + default config template picked by name -- add a new
++    # elif here (not a new launch_workers_<x>.py copy) for any FUTURE
++    # workflow that follows this same one-worker-per-structure job-packing
++    # pattern; that's what this dispatch exists for. (launch_workers_origcell.py
++    # is a deliberate exception -- a one-off test variant, not a third
++    # production workflow, see its own docstring for why it's separate.)
++    if "dielectric" in template.name:
++        fields, default_config_name = _config.DIELECTRIC_CONFIG_FIELDS, "config_dielectric.json"
++    elif "phonons" in template.name:
++        fields, default_config_name = _config.PHONON_CONFIG_FIELDS, "config_phonons.json"
++    else:
++        fields, default_config_name = _config.BANDGAP_CONFIG_FIELDS, "config_bandgap.json"
+     config_path = args.config
+     if config_path is None:
+-        config_path = code_dir / ("config_dielectric.json" if is_dielectric else "config_bandgap.json")
++        config_path = code_dir / default_config_name
+ 
+     args.run_root.mkdir(parents=True, exist_ok=True)
+     (args.run_root / "_worker_logs").mkdir(parents=True, exist_ok=True)
+@@ -72,7 +91,12 @@ def main():
+             .replace("%RUN_ROOT%", str(args.run_root.resolve()))
+             .replace("%CONFIG_PATH%", str(frozen_config_path)))
+ 
+-    filled_script = args.run_root / "submit_worker.sh"
++    # Named after the template used (submit_worker_phonons.sh, etc.), not a
++    # constant "submit_worker.sh" -- was constant here before, harmless as
++    # long as each workflow gets its own run-root (which config_used.json's
++    # freeze/verify already forces you to do), but confusing once there are
++    # three workflows' filled scripts to tell apart at a glance.
++    filled_script = args.run_root / template.name.replace(".template", "")
+     filled_script.write_text(text)
+     print(f"Filled worker script: {filled_script}")
+ 
+diff --git a/electronics-scripts/run_phonons.py b/electronics-scripts/run_phonons.py
+index 45610f3..c04e252 100644
+--- a/electronics-scripts/run_phonons.py
++++ b/electronics-scripts/run_phonons.py
+@@ -73,9 +73,32 @@ def phonopy_to_ase(patoms: "PhonopyAtoms") -> Atoms:
+ 
+ 
+ def run_one_force_calc(supercell_atoms: Atoms, workdir: Path) -> np.ndarray:
+-    """Run a single-point VASP force evaluation on one displaced
+-    supercell, return the (n_atoms, 3) forces array."""
++    """
++    Run a single-point VASP force evaluation on one displaced supercell,
++    return the (n_atoms, 3) forces array.
++
++    RESUME: if workdir/vasprun.xml already exists and ASE can read a
++    completed result from it, reuse those forces instead of rerunning --
++    displacement generation is deterministic (same structure/supercell/
++    distance in, same displacement set out), so a worker killed mid-
++    structure by walltime, then reclaimed by another worker (see
++    claiming.py's reclaim_stale_claims), picks up exactly where it left
++    off rather than redoing every already-finished displacement. An
++    incomplete/corrupt vasprun.xml (job killed mid-VASP-run) just fails
++    the read and falls through to a normal rerun, same as if it weren't
++    there -- this is deliberately best-effort, not a claim of certainty
++    about VASP's own restart/CONTCAR handling.
++    """
+     workdir.mkdir(parents=True, exist_ok=True)
++    vasprun = workdir / "vasprun.xml"
++    if vasprun.exists():
++        try:
++            done = read(str(vasprun))
++            forces = done.get_forces()
++            print(f"  {workdir.name}: found completed run, reusing forces (resume).")
++            return forces
++        except Exception:
++            print(f"  {workdir.name}: existing vasprun.xml unreadable/incomplete, rerunning.")
+     calc = make_force_calculator(str(workdir))
+     supercell_atoms.calc = calc
+     supercell_atoms.get_potential_energy()  # triggers the VASP run
+diff --git a/electronics-scripts/submit_worker_phonons.sh.template b/electronics-scripts/submit_worker_phonons.sh.template
+new file mode 100644
+index 0000000..de6bc8b
+--- /dev/null
++++ b/electronics-scripts/submit_worker_phonons.sh.template
+@@ -0,0 +1,78 @@
++#!/bin/bash
++#SBATCH --nodes=1
++##SBATCH --ntasks-per-node=32
++##SBATCH --cpus-per-task=4
++#SBATCH --ntasks-per-node=128
++#SBATCH --cpus-per-task=1
++#SBATCH --mem-per-cpu=3850
++#SBATCH --account=su007-bk
++#SBATCH --partition=compute
++#SBATCH --time=48:00:00
++#SBATCH --job-name=phonons_worker
++#SBATCH --output=%RUN_ROOT%/_worker_logs/slurm-%j.out
++#SBATCH --error=%RUN_ROOT%/_worker_logs/slurm-%j.err
++
++# Same job-packing pattern as submit_worker.sh.template / _dielectric.sh.template:
++# ONE worker job drains structures sequentially from the shared pool for up
++# to 48h. Submit several concurrently via launch_workers.py to parallelise
++# across the batch. Separate run-root from the other workflows -- keep this
++# workflow's structures/run-root distinct (e.g. runs_phonons/) so they don't
++# collide. Point --structures-dir at the SAME relaxed geometries used for
++# the dielectric run for a given structure, and --run-root at the SAME
++# run-root as that dielectric run if you want the LO-TO correction picked
++# up automatically (see run_phonons.py's docstring) -- different run-roots
++# means the BORN-file lookup simply won't find it, not an error.
++#
++# NOTE ON WALLTIME PER STRUCTURE (read before changing --reclaim-stale-minutes
++# below): unlike the bandgap/dielectric workflows, ONE "structure" here is
++# several sequential VASP force calls (one per phonopy displacement, see
++# driver_local_phonons.py's docstring) -- easily an order of magnitude
++# longer per structure than a single dielectric run, and scaling with your
++# supercell size (supercell: "auto" in config_phonons.json can pick a much
++# bigger cell than the unit cell -- check n_displacements/n_atoms_unitcell
++# in the first structure's phonons_result.json before assuming a walltime
++# budget). claiming.py's stale-claim reclaiming has no way to tell "still
++# actively running a long structure" apart from "worker died mid-structure"
++# -- it only looks at the claim lock file's age. --reclaim-stale-minutes is
++# therefore DELIBERATELY OMITTED below (unlike the dielectric template's
++# 180): passing a value here that's shorter than your worst-case
++# single-structure walltime will cause a live worker's structure to be
++# reclaimed and restarted by another worker mid-run. If you want crash
++# recovery, add --reclaim-stale-minutes with a threshold comfortably above
++# that worst case, not copied from the dielectric workflow's value.
++#
++# Plain SCF force evaluation (IBRION=-1, NSW=0), unlike the dielectric
++# workflow's IBRION=8 -- NPAR IS supported and used here (set in
++# common_phonons.py, not here -- same convention as common.py's bandgap
++# workflow). Node/task layout below is copied from the dielectric template
++# as a starting point, not re-tuned for phonon supercell sizes -- check it
++# against your actual supercell atom counts before a large batch.
++
++module purge
++module load intel/2019b HDF5/1.10.5
++
++export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK}
++unset I_MPI_PMI_LIBRARY
++
++# Same essential fix as the bandgap/dielectric templates -- Intel-compiled
++# VASP with hybrid MPI+OpenMP needs this or it segfaults (SIGSEGV, for__signal_handl).
++ulimit -s unlimited #needed for VASP !!!
++
++path=$HOME/APPS/vasp.6.3.2
++exe=vasp_std
++APP=$path/$exe
++
++export ASE_VASP_COMMAND="srun $APP"
++export VASP_PP_PATH="/home/m/msrbzq/VASP-PPs"
++
++source /home/m/msrbzq/APPS/miniconda3/etc/profile.d/conda.sh
++conda activate bandgap-env
++# phonopy must be installed in this env: pip install phonopy
++# (also needs the phonopy-vasp-born console script on PATH, for the BORN
++# file step -- installed automatically alongside phonopy itself).
++
++cd %CODE_DIR%
++mkdir -p %RUN_ROOT%/_worker_logs
++
++python driver_local_phonons.py --structures-dir %STRUCTURES_DIR% --run-root %RUN_ROOT% \
++    --config %CONFIG_PATH%

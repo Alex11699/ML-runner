@@ -73,9 +73,32 @@ def phonopy_to_ase(patoms: "PhonopyAtoms") -> Atoms:
 
 
 def run_one_force_calc(supercell_atoms: Atoms, workdir: Path) -> np.ndarray:
-    """Run a single-point VASP force evaluation on one displaced
-    supercell, return the (n_atoms, 3) forces array."""
+    """
+    Run a single-point VASP force evaluation on one displaced supercell,
+    return the (n_atoms, 3) forces array.
+
+    RESUME: if workdir/vasprun.xml already exists and ASE can read a
+    completed result from it, reuse those forces instead of rerunning --
+    displacement generation is deterministic (same structure/supercell/
+    distance in, same displacement set out), so a worker killed mid-
+    structure by walltime, then reclaimed by another worker (see
+    claiming.py's reclaim_stale_claims), picks up exactly where it left
+    off rather than redoing every already-finished displacement. An
+    incomplete/corrupt vasprun.xml (job killed mid-VASP-run) just fails
+    the read and falls through to a normal rerun, same as if it weren't
+    there -- this is deliberately best-effort, not a claim of certainty
+    about VASP's own restart/CONTCAR handling.
+    """
     workdir.mkdir(parents=True, exist_ok=True)
+    vasprun = workdir / "vasprun.xml"
+    if vasprun.exists():
+        try:
+            done = read(str(vasprun))
+            forces = done.get_forces()
+            print(f"  {workdir.name}: found completed run, reusing forces (resume).")
+            return forces
+        except Exception:
+            print(f"  {workdir.name}: existing vasprun.xml unreadable/incomplete, rerunning.")
     calc = make_force_calculator(str(workdir))
     supercell_atoms.calc = calc
     supercell_atoms.get_potential_energy()  # triggers the VASP run
