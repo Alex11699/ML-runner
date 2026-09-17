@@ -124,6 +124,88 @@ DIELECTRIC_CONFIG_FIELDS = {
     },
 }
 
+# Finite-displacement phonons (phonopy + plain VASP forces), NOT DFPT-on-
+# supercell. See common_phonons.py's module docstring for the reasoning
+# (VASP-docs + forum-maintainer guidance that finite differences is the
+# better route than DFPT here, plus IBRION=8's NPAR/NCORE restriction
+# getting worse on the larger cells dispersion needs) -- this was a
+# deliberate decision, not a default. The DIELECTRIC_CONFIG_FIELDS
+# workflow above is UNCHANGED and still required alongside this one: it
+# supplies the Born charges/dielectric tensor for the LO-TO
+# non-analytical correction, on the primitive/original cell, no
+# supercell involved there.
+PHONON_CONFIG_FIELDS = {
+    "encut": {
+        "default": 800.0,
+        "doc": "Plane-wave cutoff (eV). Must match the ENCUT the input "
+               "geometry was relaxed at, same reasoning as the bandgap/"
+               "dielectric workflows.",
+    },
+    "algo": {
+        "default": "Normal",
+        "doc": "VASP ALGO tag for each displaced-supercell force "
+               "evaluation.",
+    },
+    "nelm": {
+        "default": 120,
+        "doc": "Max electronic SCF steps per force evaluation.",
+    },
+    "sigma_elec": {
+        "default": 0.05,
+        "doc": "Smearing width (eV), ISMEAR=0. Matches the dielectric "
+               "workflow's value.",
+    },
+    "kspacing": {
+        "default": 0.2,
+        "doc": "KSPACING for each displaced-supercell force run. Note "
+               "this is evaluated on the SUPERCELL, not the unit cell -- "
+               "the same KSPACING value yields proportionally fewer "
+               "k-points there than it would on the primitive cell, which "
+               "is the physically correct behaviour, not something to "
+               "compensate for.",
+    },
+    "ediff": {
+        "default": 1e-8,
+        "doc": "Electronic convergence criterion (eV) for each force "
+               "evaluation. Phonon force constants are sensitive to force "
+               "noise, so this is deliberately tight, not loosened for "
+               "the extra supercell cost.",
+    },
+    "supercell": {
+        "default": "auto",
+        "doc": "Either the string 'auto', or an explicit diagonal repeat "
+               "[nx, ny, nz]. 'auto' (default) picks the smallest diagonal "
+               "repeat such that every supercell lattice vector is >= "
+               "min_image_distance (see that field) -- a standard "
+               "minimum-image-convention rule of thumb for finite-"
+               "displacement phonons, capped at 6x per direction as a "
+               "sanity backstop. Set explicitly (e.g. [2, 2, 2]) once "
+               "you've decided on a size (e.g. after convergence-testing "
+               "the dispersion against supercell size for one structure).",
+    },
+    "min_image_distance": {
+        "default": 15.0,
+        "doc": "Angstrom. Only used when supercell == 'auto' (see above) "
+               "-- target minimum supercell lattice-vector length. This is "
+               "a starting-point rule of thumb, not a converged value for "
+               "your IGZO systems specifically; worth checking dispersion "
+               "curves for at least one structure at two different sizes "
+               "before trusting it across the batch.",
+    },
+    "displacement_distance": {
+        "default": 0.01,
+        "doc": "Angstrom. Finite-displacement magnitude phonopy uses when "
+               "generating the displaced supercells (its own default, per "
+               "phonopy's documentation).",
+    },
+    "band_npoints": {
+        "default": 51,
+        "doc": "Number of q-points per segment along the automatic "
+               "(seekpath-derived) dispersion path phonopy generates for "
+               "band.yaml.",
+    },
+}
+
 
 def load_config(fields: dict, path) -> dict:
     """
@@ -153,6 +235,16 @@ def load_config(fields: dict, path) -> dict:
         if choices and value not in choices:
             raise ValueError(
                 f"Config key '{name}'={value!r} not in allowed choices {choices}"
+            )
+    if "supercell" in resolved:
+        sc = resolved["supercell"]
+        is_explicit = (isinstance(sc, list) and len(sc) == 3
+                       and all(isinstance(n, int) and n >= 1 for n in sc))
+        is_auto = sc == "auto"
+        if not (is_explicit or is_auto):
+            raise ValueError(
+                f"Config key 'supercell'={sc!r} must be 'auto' or a list "
+                f"of 3 positive integers, e.g. [2, 2, 2]"
             )
     return resolved
 

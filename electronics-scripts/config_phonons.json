@@ -1,0 +1,12 @@
+{
+  "algo": "Normal",
+  "band_npoints": 51,
+  "displacement_distance": 0.01,
+  "ediff": 1e-08,
+  "encut": 800.0,
+  "kspacing": 0.2,
+  "min_image_distance": 15.0,
+  "nelm": 120,
+  "sigma_elec": 0.05,
+  "supercell": "auto"
+}
