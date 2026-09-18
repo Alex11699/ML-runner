@@ -86,8 +86,12 @@ def main():
     ap.add_argument("--config", type=Path, default=SCRIPT_DIR / "config_phonons.json",
                      help="JSON config for the DFPT run -- see CONFIG_REFERENCE.md. "
                           "Def: config_phonons.json next to this script. Resolved "
-                          "ONCE and frozen to run-root/config_used.json on first "
-                          "submission for this run-root (see config.py).")
+                          "ONCE and frozen to run-root/config_used_phonons.json (a "
+                          "DIFFERENT filename than the dielectric/bandgap workflows' "
+                          "config_used.json -- deliberate, so this can share a "
+                          "run-root with a dielectric batch, see config.py's "
+                          "resolve_and_freeze() docstring) on first submission for "
+                          "this run-root.")
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--stop-on-first-failure", action="store_true")
     ap.add_argument("--force", action="store_true",
@@ -106,9 +110,10 @@ def main():
 
     env_check()
     _resolved, config_path = _config.resolve_and_freeze(
-        _config.PHONON_CONFIG_FIELDS, args.config, args.run_root)
+        _config.PHONON_CONFIG_FIELDS, args.config, args.run_root,
+        freeze_filename="config_used_phonons.json")
     os.environ["PHONON_CONFIG_PATH"] = str(config_path)
-    claims_dir = ensure_dirs(args.run_root)
+    claims_dir = ensure_dirs(args.run_root, stage="phonons")
 
     if args.reclaim_all_claims:
         reclaim_stale_claims(claims_dir, stale_minutes=None)

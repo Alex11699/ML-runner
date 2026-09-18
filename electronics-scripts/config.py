@@ -1,31 +1,43 @@
 """
-Shared config schema + loader/freezer for the bandgap and dielectric
-workflows. This is deliberately its own module (not inside common.py /
-common_dielectric.py) so it's the one place both workflows' field lists
-live, side by side, for reference -- "what's tunable and what does it mean"
-shouldn't require reading through calculator-construction code to answer.
+Shared config schema + loader/freezer for the bandgap, dielectric, and
+phonon workflows. This is deliberately its own module (not inside
+common.py / common_dielectric.py / common_phonons.py) so it's the one
+place all three workflows' field lists live, side by side, for reference
+-- "what's tunable and what does it mean" shouldn't require reading
+through calculator-construction code to answer.
 
-Two separate schemas, not one shared one: the bandgap and dielectric
-workflows are run as separate batches against separate run-roots (you never
-launch both from the same config), so there's no shared ENCUT/EDIFF/etc.
-to accidentally desync -- each field lives in exactly one schema, named
-plainly (no _dielectric suffix needed).
+Three separate schemas, not one shared one: each field lives in exactly
+one schema, named plainly (no _dielectric/_phonon suffix needed on the
+keys themselves). Bandgap and dielectric are still never run from the
+same run-root (see their own resolve_and_freeze() calls, both using this
+module's default freeze filename). Phonons is the one exception -- it's
+DESIGNED to share a run-root with a dielectric batch, so it can pick up
+that batch's Born charges/dielectric tensor automatically (see
+run_phonons.py's docstring) -- which is exactly why resolve_and_freeze()
+below takes a freeze_filename, not a hardcoded "config_used.json": two
+workflows freezing to the SAME filename in the SAME run-root is precisely
+the mismatch this function exists to catch (different schemas, so
+"different settings" is guaranteed), not something it should allow
+through.
 
 Usage pattern:
-  - common.py / common_dielectric.py call load_config() at import time,
-    reading the path from an env var (BANDGAP_CONFIG_PATH /
-    DIELECTRIC_CONFIG_PATH) that the driver scripts set before invoking
-    run_scf.py / run_bands.py / run_dielectric.py as a subprocess.
+  - common.py / common_dielectric.py / common_phonons.py call
+    load_config() at import time, reading the path from an env var
+    (BANDGAP_CONFIG_PATH / DIELECTRIC_CONFIG_PATH / PHONON_CONFIG_PATH)
+    that the driver scripts set before invoking run_scf.py / run_bands.py
+    / run_dielectric.py / run_phonons.py as a subprocess.
   - driver.py / driver_local.py / driver_local_dielectric.py /
-    launch_workers.py call resolve_and_freeze() ONCE per run-root, at
-    submission time: it resolves --config against the schema defaults,
-    writes (or verifies against) run_root/config_used.json, and that
-    frozen copy -- not your possibly-still-being-edited --config file --
-    is what every job for that run-root actually reads. This is what
-    keeps a run-root internally consistent even if you tweak your working
-    config file mid-batch, and it's what makes "what did runs/ actually
-    get computed with" answerable after the fact without digging through
-    job logs.
+    driver_local_phonons.py / launch_workers.py call resolve_and_freeze()
+    ONCE per run-root, at submission time: it resolves --config against
+    the schema defaults, writes (or verifies against)
+    run_root/<freeze_filename> (config_used.json for bandgap/dielectric,
+    config_used_phonons.json for phonons -- see resolve_and_freeze()'s
+    own docstring), and that frozen copy -- not your possibly-still-being-
+    edited --config file -- is what every job for that run-root actually
+    reads. This is what keeps a run-root internally consistent even if
+    you tweak your working config file mid-batch, and it's what makes
+    "what did runs/ actually get computed with" answerable after the fact
+    without digging through job logs.
 
 Config files are plain JSON: {"encut": 700.0, "functional": "optb88-vdw"}.
 Unknown keys are rejected (typo protection) rather than silently ignored.
@@ -249,25 +261,38 @@ def load_config(fields: dict, path) -> dict:
     return resolved
 
 
-def resolve_and_freeze(fields: dict, config_path, run_root) -> tuple[dict, Path]:
+def resolve_and_freeze(fields: dict, config_path, run_root, freeze_filename="config_used.json") -> tuple[dict, Path]:
     """
     Called ONCE per run-root, by whichever driver script is submitting jobs
     against it (driver.py / driver_local.py / driver_local_dielectric.py /
-    launch_workers.py) -- never by run_scf.py/run_bands.py/run_dielectric.py
-    themselves, which just read the frozen file via load_config().
+    driver_local_phonons.py / launch_workers.py) -- never by
+    run_scf.py/run_bands.py/run_dielectric.py/run_phonons.py themselves,
+    which just read the frozen file via load_config().
 
     Resolves config_path against `fields`, then writes it to
-    run_root/config_used.json if that doesn't exist yet, or verifies it
+    run_root/<freeze_filename> if that doesn't exist yet, or verifies it
     matches if it does. A mismatch raises rather than silently overwriting
     -- this run-root was already started under different settings, and
     sbatch's submission/execution decoupling means jobs from that earlier
     submission could still be queued or running. Returns (resolved_config,
     frozen_path) either way.
+
+    freeze_filename defaults to "config_used.json" -- fine as long as at
+    most ONE workflow's schema is ever frozen into a given run-root (true
+    for bandgap and dielectric, which never share a run-root). Pass a
+    distinct name (e.g. "config_used_phonons.json") for a workflow that's
+    deliberately meant to share a run-root with another -- phonons does
+    this, to share a run-root with a dielectric batch for the automatic
+    Born-charges pickup (see run_phonons.py's docstring). Freezing two
+    different schemas to the SAME filename in the SAME run-root will
+    always raise here (their key sets differ), which is the mismatch this
+    function exists to catch, not a bug to work around by changing the
+    default for everyone.
     """
     resolved = load_config(fields, config_path)
     run_root = Path(run_root)
     run_root.mkdir(parents=True, exist_ok=True)
-    frozen_path = run_root / "config_used.json"
+    frozen_path = run_root / freeze_filename
 
     if frozen_path.exists():
         existing = json.loads(frozen_path.read_text())

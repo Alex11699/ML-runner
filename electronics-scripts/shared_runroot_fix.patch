@@ -1,0 +1,252 @@
+diff --git a/electronics-scripts/claiming.py b/electronics-scripts/claiming.py
+index 82d79c5..1f8372c 100644
+--- a/electronics-scripts/claiming.py
++++ b/electronics-scripts/claiming.py
+@@ -104,11 +104,35 @@ def should_attempt(status_path: Path, args) -> bool:
+     return attempts < args.max_retries
+ 
+ 
+-def ensure_dirs(run_root: Path):
+-    """Only one reserved directory now (vs three before) -- claims_dir for
+-    lock files. No completed/failed/inprogress directories at all, since
+-    nothing physically moves."""
+-    claims_dir = run_root / "_claims"
++def ensure_dirs(run_root: Path, stage: str | None = None):
++    """
++    Claims live under run_root/_claims -- or run_root/_claims/<stage>/ when
++    `stage` is given. Pass `stage` ONLY for a workflow that's deliberately
++    designed to share a run-root with another (currently: phonons, sharing
++    with dielectric -- see run_phonons.py's docstring) -- otherwise leave
++    it None (the default, unchanged behavior).
++
++    WHY THIS MATTERS: claim_structure() below locks purely by structure
++    NAME, with no notion of "which workflow" baked into claiming.py
++    itself. Two workflows calling ensure_dirs(run_root) with the SAME
++    run_root and no stage would share one flat claims directory, so
++    claiming a structure for one workflow would ALSO block the other
++    workflow's claim on that same-named structure -- they'd contend for
++    the same lock despite being entirely independent stages. Bandgap and
++    dielectric never hit this because they're never run against the same
++    run-root (see config.py's module docstring); phonons IS run against
++    the same run-root as dielectric, so it MUST pass a distinct stage
++    here, at every call site that touches claims for it (both the driver
++    and run_phonons.py's own release_claim() call at the end) -- a
++    mismatch between those call sites' stage argument leaves a lock
++    behind that a worker looks for it under the wrong directory to
++    release.
++
++    Only one reserved directory (vs three before the lock-file redesign)
++    -- claims_dir for lock files. No completed/failed/inprogress
++    directories at all, since nothing physically moves.
++    """
++    claims_dir = run_root / "_claims" if stage is None else run_root / "_claims" / stage
+     claims_dir.mkdir(parents=True, exist_ok=True)
+     return claims_dir
+ 
+diff --git a/electronics-scripts/config.py b/electronics-scripts/config.py
+index 07a81cd..7c748b3 100644
+--- a/electronics-scripts/config.py
++++ b/electronics-scripts/config.py
+@@ -1,31 +1,43 @@
+ """
+-Shared config schema + loader/freezer for the bandgap and dielectric
+-workflows. This is deliberately its own module (not inside common.py /
+-common_dielectric.py) so it's the one place both workflows' field lists
+-live, side by side, for reference -- "what's tunable and what does it mean"
+-shouldn't require reading through calculator-construction code to answer.
++Shared config schema + loader/freezer for the bandgap, dielectric, and
++phonon workflows. This is deliberately its own module (not inside
++common.py / common_dielectric.py / common_phonons.py) so it's the one
++place all three workflows' field lists live, side by side, for reference
++-- "what's tunable and what does it mean" shouldn't require reading
++through calculator-construction code to answer.
+ 
+-Two separate schemas, not one shared one: the bandgap and dielectric
+-workflows are run as separate batches against separate run-roots (you never
+-launch both from the same config), so there's no shared ENCUT/EDIFF/etc.
+-to accidentally desync -- each field lives in exactly one schema, named
+-plainly (no _dielectric suffix needed).
++Three separate schemas, not one shared one: each field lives in exactly
++one schema, named plainly (no _dielectric/_phonon suffix needed on the
++keys themselves). Bandgap and dielectric are still never run from the
++same run-root (see their own resolve_and_freeze() calls, both using this
++module's default freeze filename). Phonons is the one exception -- it's
++DESIGNED to share a run-root with a dielectric batch, so it can pick up
++that batch's Born charges/dielectric tensor automatically (see
++run_phonons.py's docstring) -- which is exactly why resolve_and_freeze()
++below takes a freeze_filename, not a hardcoded "config_used.json": two
++workflows freezing to the SAME filename in the SAME run-root is precisely
++the mismatch this function exists to catch (different schemas, so
++"different settings" is guaranteed), not something it should allow
++through.
+ 
+ Usage pattern:
+-  - common.py / common_dielectric.py call load_config() at import time,
+-    reading the path from an env var (BANDGAP_CONFIG_PATH /
+-    DIELECTRIC_CONFIG_PATH) that the driver scripts set before invoking
+-    run_scf.py / run_bands.py / run_dielectric.py as a subprocess.
++  - common.py / common_dielectric.py / common_phonons.py call
++    load_config() at import time, reading the path from an env var
++    (BANDGAP_CONFIG_PATH / DIELECTRIC_CONFIG_PATH / PHONON_CONFIG_PATH)
++    that the driver scripts set before invoking run_scf.py / run_bands.py
++    / run_dielectric.py / run_phonons.py as a subprocess.
+   - driver.py / driver_local.py / driver_local_dielectric.py /
+-    launch_workers.py call resolve_and_freeze() ONCE per run-root, at
+-    submission time: it resolves --config against the schema defaults,
+-    writes (or verifies against) run_root/config_used.json, and that
+-    frozen copy -- not your possibly-still-being-edited --config file --
+-    is what every job for that run-root actually reads. This is what
+-    keeps a run-root internally consistent even if you tweak your working
+-    config file mid-batch, and it's what makes "what did runs/ actually
+-    get computed with" answerable after the fact without digging through
+-    job logs.
++    driver_local_phonons.py / launch_workers.py call resolve_and_freeze()
++    ONCE per run-root, at submission time: it resolves --config against
++    the schema defaults, writes (or verifies against)
++    run_root/<freeze_filename> (config_used.json for bandgap/dielectric,
++    config_used_phonons.json for phonons -- see resolve_and_freeze()'s
++    own docstring), and that frozen copy -- not your possibly-still-being-
++    edited --config file -- is what every job for that run-root actually
++    reads. This is what keeps a run-root internally consistent even if
++    you tweak your working config file mid-batch, and it's what makes
++    "what did runs/ actually get computed with" answerable after the fact
++    without digging through job logs.
+ 
+ Config files are plain JSON: {"encut": 700.0, "functional": "optb88-vdw"}.
+ Unknown keys are rejected (typo protection) rather than silently ignored.
+@@ -249,25 +261,38 @@ def load_config(fields: dict, path) -> dict:
+     return resolved
+ 
+ 
+-def resolve_and_freeze(fields: dict, config_path, run_root) -> tuple[dict, Path]:
++def resolve_and_freeze(fields: dict, config_path, run_root, freeze_filename="config_used.json") -> tuple[dict, Path]:
+     """
+     Called ONCE per run-root, by whichever driver script is submitting jobs
+     against it (driver.py / driver_local.py / driver_local_dielectric.py /
+-    launch_workers.py) -- never by run_scf.py/run_bands.py/run_dielectric.py
+-    themselves, which just read the frozen file via load_config().
++    driver_local_phonons.py / launch_workers.py) -- never by
++    run_scf.py/run_bands.py/run_dielectric.py/run_phonons.py themselves,
++    which just read the frozen file via load_config().
+ 
+     Resolves config_path against `fields`, then writes it to
+-    run_root/config_used.json if that doesn't exist yet, or verifies it
++    run_root/<freeze_filename> if that doesn't exist yet, or verifies it
+     matches if it does. A mismatch raises rather than silently overwriting
+     -- this run-root was already started under different settings, and
+     sbatch's submission/execution decoupling means jobs from that earlier
+     submission could still be queued or running. Returns (resolved_config,
+     frozen_path) either way.
++
++    freeze_filename defaults to "config_used.json" -- fine as long as at
++    most ONE workflow's schema is ever frozen into a given run-root (true
++    for bandgap and dielectric, which never share a run-root). Pass a
++    distinct name (e.g. "config_used_phonons.json") for a workflow that's
++    deliberately meant to share a run-root with another -- phonons does
++    this, to share a run-root with a dielectric batch for the automatic
++    Born-charges pickup (see run_phonons.py's docstring). Freezing two
++    different schemas to the SAME filename in the SAME run-root will
++    always raise here (their key sets differ), which is the mismatch this
++    function exists to catch, not a bug to work around by changing the
++    default for everyone.
+     """
+     resolved = load_config(fields, config_path)
+     run_root = Path(run_root)
+     run_root.mkdir(parents=True, exist_ok=True)
+-    frozen_path = run_root / "config_used.json"
++    frozen_path = run_root / freeze_filename
+ 
+     if frozen_path.exists():
+         existing = json.loads(frozen_path.read_text())
+diff --git a/electronics-scripts/driver_local_phonons.py b/electronics-scripts/driver_local_phonons.py
+index c2bcf52..b791771 100644
+--- a/electronics-scripts/driver_local_phonons.py
++++ b/electronics-scripts/driver_local_phonons.py
+@@ -86,8 +86,12 @@ def main():
+     ap.add_argument("--config", type=Path, default=SCRIPT_DIR / "config_phonons.json",
+                      help="JSON config for the DFPT run -- see CONFIG_REFERENCE.md. "
+                           "Def: config_phonons.json next to this script. Resolved "
+-                          "ONCE and frozen to run-root/config_used.json on first "
+-                          "submission for this run-root (see config.py).")
++                          "ONCE and frozen to run-root/config_used_phonons.json (a "
++                          "DIFFERENT filename than the dielectric/bandgap workflows' "
++                          "config_used.json -- deliberate, so this can share a "
++                          "run-root with a dielectric batch, see config.py's "
++                          "resolve_and_freeze() docstring) on first submission for "
++                          "this run-root.")
+     ap.add_argument("--limit", type=int, default=None)
+     ap.add_argument("--stop-on-first-failure", action="store_true")
+     ap.add_argument("--force", action="store_true",
+@@ -106,9 +110,10 @@ def main():
+ 
+     env_check()
+     _resolved, config_path = _config.resolve_and_freeze(
+-        _config.PHONON_CONFIG_FIELDS, args.config, args.run_root)
++        _config.PHONON_CONFIG_FIELDS, args.config, args.run_root,
++        freeze_filename="config_used_phonons.json")
+     os.environ["PHONON_CONFIG_PATH"] = str(config_path)
+-    claims_dir = ensure_dirs(args.run_root)
++    claims_dir = ensure_dirs(args.run_root, stage="phonons")
+ 
+     if args.reclaim_all_claims:
+         reclaim_stale_claims(claims_dir, stale_minutes=None)
+diff --git a/electronics-scripts/launch_workers.py b/electronics-scripts/launch_workers.py
+index 85475db..d5e586b 100644
+--- a/electronics-scripts/launch_workers.py
++++ b/electronics-scripts/launch_workers.py
+@@ -66,12 +66,26 @@ def main():
+     # pattern; that's what this dispatch exists for. (launch_workers_origcell.py
+     # is a deliberate exception -- a one-off test variant, not a third
+     # production workflow, see its own docstring for why it's separate.)
++    #
++    # freeze_filename: phonons gets its OWN frozen-config filename
++    # (config_used_phonons.json), not the shared default -- it's the one
++    # workflow designed to share a run-root with another (dielectric, for
++    # the automatic Born-charges pickup), and two different schemas
++    # freezing to the same "config_used.json" in that shared run-root
++    # would always raise (see config.py's resolve_and_freeze() docstring).
++    # Bandgap/dielectric keep the plain default -- they never share a
++    # run-root, and changing their filename now would orphan the
++    # config_used.json any already-queued/running job for an existing
++    # run-root was launched against.
+     if "dielectric" in template.name:
+-        fields, default_config_name = _config.DIELECTRIC_CONFIG_FIELDS, "config_dielectric.json"
++        fields, default_config_name, freeze_filename = (
++            _config.DIELECTRIC_CONFIG_FIELDS, "config_dielectric.json", "config_used.json")
+     elif "phonons" in template.name:
+-        fields, default_config_name = _config.PHONON_CONFIG_FIELDS, "config_phonons.json"
++        fields, default_config_name, freeze_filename = (
++            _config.PHONON_CONFIG_FIELDS, "config_phonons.json", "config_used_phonons.json")
+     else:
+-        fields, default_config_name = _config.BANDGAP_CONFIG_FIELDS, "config_bandgap.json"
++        fields, default_config_name, freeze_filename = (
++            _config.BANDGAP_CONFIG_FIELDS, "config_bandgap.json", "config_used.json")
+     config_path = args.config
+     if config_path is None:
+         config_path = code_dir / default_config_name
+@@ -82,7 +96,8 @@ def main():
+     # before invoking driver_local.py --config, so a relative frozen path
+     # would resolve against electronics-scripts/ instead of wherever this
+     # command was actually run from.
+-    _resolved, frozen_config_path = _config.resolve_and_freeze(fields, config_path, args.run_root.resolve())
++    _resolved, frozen_config_path = _config.resolve_and_freeze(
++        fields, config_path, args.run_root.resolve(), freeze_filename=freeze_filename)
+ 
+     text = template.read_text()
+     text = (text
+diff --git a/electronics-scripts/run_phonons.py b/electronics-scripts/run_phonons.py
+index c04e252..239037b 100644
+--- a/electronics-scripts/run_phonons.py
++++ b/electronics-scripts/run_phonons.py
+@@ -222,7 +222,10 @@ def main():
+ 
+     # Only stage for a structure in this workflow -> release unconditionally,
+     # same convention as run_dielectric.py.
+-    release_claim(name, ensure_dirs(run_root))
++    # stage="phonons" here MUST match driver_local_phonons.py's ensure_dirs()
++    # call -- see claiming.py's ensure_dirs() docstring for why a mismatch
++    # leaves this claim un-releasable.
++    release_claim(name, ensure_dirs(run_root, stage="phonons"))
+ 
+     if result["status"] != "ok":
+         print(f"[{name}] phonons stage problem: {result.get('error')}")

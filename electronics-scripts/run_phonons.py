@@ -222,7 +222,10 @@ def main():
 
     # Only stage for a structure in this workflow -> release unconditionally,
     # same convention as run_dielectric.py.
-    release_claim(name, ensure_dirs(run_root))
+    # stage="phonons" here MUST match driver_local_phonons.py's ensure_dirs()
+    # call -- see claiming.py's ensure_dirs() docstring for why a mismatch
+    # leaves this claim un-releasable.
+    release_claim(name, ensure_dirs(run_root, stage="phonons"))
 
     if result["status"] != "ok":
         print(f"[{name}] phonons stage problem: {result.get('error')}")

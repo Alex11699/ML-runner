@@ -66,12 +66,26 @@ def main():
     # pattern; that's what this dispatch exists for. (launch_workers_origcell.py
     # is a deliberate exception -- a one-off test variant, not a third
     # production workflow, see its own docstring for why it's separate.)
+    #
+    # freeze_filename: phonons gets its OWN frozen-config filename
+    # (config_used_phonons.json), not the shared default -- it's the one
+    # workflow designed to share a run-root with another (dielectric, for
+    # the automatic Born-charges pickup), and two different schemas
+    # freezing to the same "config_used.json" in that shared run-root
+    # would always raise (see config.py's resolve_and_freeze() docstring).
+    # Bandgap/dielectric keep the plain default -- they never share a
+    # run-root, and changing their filename now would orphan the
+    # config_used.json any already-queued/running job for an existing
+    # run-root was launched against.
     if "dielectric" in template.name:
-        fields, default_config_name = _config.DIELECTRIC_CONFIG_FIELDS, "config_dielectric.json"
+        fields, default_config_name, freeze_filename = (
+            _config.DIELECTRIC_CONFIG_FIELDS, "config_dielectric.json", "config_used.json")
     elif "phonons" in template.name:
-        fields, default_config_name = _config.PHONON_CONFIG_FIELDS, "config_phonons.json"
+        fields, default_config_name, freeze_filename = (
+            _config.PHONON_CONFIG_FIELDS, "config_phonons.json", "config_used_phonons.json")
     else:
-        fields, default_config_name = _config.BANDGAP_CONFIG_FIELDS, "config_bandgap.json"
+        fields, default_config_name, freeze_filename = (
+            _config.BANDGAP_CONFIG_FIELDS, "config_bandgap.json", "config_used.json")
     config_path = args.config
     if config_path is None:
         config_path = code_dir / default_config_name
@@ -82,7 +96,8 @@ def main():
     # before invoking driver_local.py --config, so a relative frozen path
     # would resolve against electronics-scripts/ instead of wherever this
     # command was actually run from.
-    _resolved, frozen_config_path = _config.resolve_and_freeze(fields, config_path, args.run_root.resolve())
+    _resolved, frozen_config_path = _config.resolve_and_freeze(
+        fields, config_path, args.run_root.resolve(), freeze_filename=freeze_filename)
 
     text = template.read_text()
     text = (text

@@ -104,11 +104,35 @@ def should_attempt(status_path: Path, args) -> bool:
     return attempts < args.max_retries
 
 
-def ensure_dirs(run_root: Path):
-    """Only one reserved directory now (vs three before) -- claims_dir for
-    lock files. No completed/failed/inprogress directories at all, since
-    nothing physically moves."""
-    claims_dir = run_root / "_claims"
+def ensure_dirs(run_root: Path, stage: str | None = None):
+    """
+    Claims live under run_root/_claims -- or run_root/_claims/<stage>/ when
+    `stage` is given. Pass `stage` ONLY for a workflow that's deliberately
+    designed to share a run-root with another (currently: phonons, sharing
+    with dielectric -- see run_phonons.py's docstring) -- otherwise leave
+    it None (the default, unchanged behavior).
+
+    WHY THIS MATTERS: claim_structure() below locks purely by structure
+    NAME, with no notion of "which workflow" baked into claiming.py
+    itself. Two workflows calling ensure_dirs(run_root) with the SAME
+    run_root and no stage would share one flat claims directory, so
+    claiming a structure for one workflow would ALSO block the other
+    workflow's claim on that same-named structure -- they'd contend for
+    the same lock despite being entirely independent stages. Bandgap and
+    dielectric never hit this because they're never run against the same
+    run-root (see config.py's module docstring); phonons IS run against
+    the same run-root as dielectric, so it MUST pass a distinct stage
+    here, at every call site that touches claims for it (both the driver
+    and run_phonons.py's own release_claim() call at the end) -- a
+    mismatch between those call sites' stage argument leaves a lock
+    behind that a worker looks for it under the wrong directory to
+    release.
+
+    Only one reserved directory (vs three before the lock-file redesign)
+    -- claims_dir for lock files. No completed/failed/inprogress
+    directories at all, since nothing physically moves.
+    """
+    claims_dir = run_root / "_claims" if stage is None else run_root / "_claims" / stage
     claims_dir.mkdir(parents=True, exist_ok=True)
     return claims_dir
 
